@@ -14,7 +14,6 @@ import axios from "axios";
 import ChatSection from "./ChatBotSection";
 import './EditorPage.css'
 
-// List of supported languages
 const LANGUAGES = [
   "python3",
   "java",
@@ -40,7 +39,7 @@ function EditorPage() {
   const [isCompileWindowOpen, setIsCompileWindowOpen] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState("python3");
-  const [isChatOpen, setIsChatOpen] = useState(false); // Chat state
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const codeRef = useRef(null);
 
   const Location = useLocation();
@@ -117,12 +116,12 @@ function EditorPage() {
   const runCode = async () => {
     setIsCompiling(true);
     try {
-      const response = await axios.post("https://collab-itoe.onrender.com/compile", {
+      const response = await axios.post("http://localhost:5000/compile", {
         code: codeRef.current,
         language: selectedLanguage,
       });
       console.log("Backend response:", response.data);
-      setOutput(response.data.output || JSON.stringify(response.data));
+      setOutput(response.data);
     } catch (error) {
       console.error("Error compiling code:", error);
       setOutput(error.response?.data?.error || "An error occurred");
@@ -142,7 +141,6 @@ function EditorPage() {
   return (
     <div className="container-fluid vh-100 d-flex flex-column">
       <div className="row flex-grow-1">
-        {/* Client panel */}
         <div className="col-md-2 bg-dark text-light d-flex flex-column">
           <img
             src="/images/logo5.jpg"
@@ -152,16 +150,18 @@ function EditorPage() {
           />
           <hr style={{ marginTop: "2rem" }} />
 
-          {/* Client list container */}
           <div className="d-flex flex-column flex-grow-1 overflow-auto">
             <span className="mb-2">Members</span>
             {clients.map((client) => (
-              <Client key={client.socketId} username={client.username} />
+              <Client
+                key={client.socketId}
+                username={client.username}
+                currentUser={Location.state.username}
+              />
             ))}
           </div>
 
           <hr />
-          {/* Buttons */}
           <div className="mt-auto mb-3">
             <button className="btn btn-success w-100 mb-2" onClick={copyRoomId}>
               Copy Room ID
@@ -172,9 +172,7 @@ function EditorPage() {
           </div>
         </div>
 
-        {/* Editor panel */}
         <div className="col-md-10 text-light d-flex flex-column">
-          {/* Language selector */}
           <div className="bg-dark p-2 d-flex justify-content-end">
             <select
               className="form-select w-auto"
@@ -199,7 +197,6 @@ function EditorPage() {
         </div>
       </div>
 
-      {/* Compiler toggle button */}
       <button
         className="btn btn-primary position-fixed bottom-0 end-0 m-3"
         onClick={toggleCompileWindow}
@@ -208,7 +205,6 @@ function EditorPage() {
         {isCompileWindowOpen ? "Close Compiler" : "Open Compiler"}
       </button>
 
-      {/* Compiler section */}
       <div
         className={`bg-dark text-light p-3 ${
           isCompileWindowOpen ? "d-block" : "d-none"
@@ -244,7 +240,6 @@ function EditorPage() {
         </pre>
       </div>
 
-      {/* Chatbot toggle button */}
       <button
         className="btn btn-info position-fixed"
         onClick={toggleChat}
@@ -258,14 +253,13 @@ function EditorPage() {
         {isChatOpen ? "Close Chat" : "Open Chat"}
       </button>
 
-      {/* Chatbot section */}
       {isChatOpen && (
         <div
           className="chatbot-container bg-dark text-light p-3"
           style={{
             position: "fixed",
             bottom: "0",
-            right:"0",
+            right: "0",
             width: "100vw",
             height: "61vh",
             borderRadius: "20px",

@@ -9,111 +9,272 @@ const server = http.createServer(app);
 require("dotenv").config();
 
 const languageConfig = {
-  python3: { engine: "python", version: "3" },
-  java: { engine: "java", version: "openjdk11" },
-  cpp: { engine: "cpp", version: "11" },
-  nodejs: { engine: "nodejs", version: "16" },
-  c: { engine: "c", version: "11" },
-  ruby: { engine: "ruby", version: "3" },
-  go: { engine: "go", version: "1.16" },
-  scala: { engine: "scala", version: "2.13" },
-  bash: { engine: "bash", version: "5" },
-  sql: { engine: "sql", version: "latest" },
-  pascal: { engine: "pascal", version: "3" },
-  csharp: { engine: "csharp", version: "5" },
-  php: { engine: "php", version: "7" },
-  swift: { engine: "swift", version: "5" },
-  rust: { engine: "rust", version: "1.50" },
-  r: { engine: "r", version: "4.0" },
+  python3: { 
+    engine: "python", 
+    version: "3.10",
+    extension: "py",
+    template: code => code,
+    compile: false
+  },
+  java: { 
+    engine: "java", 
+    version: "15.0.2",
+    extension: "java",
+    template: code => `
+public class Main {
+    public static void main(String[] args) {
+        ${code}
+    }
+}`,
+    compile: true
+  },
+  cpp: { 
+    engine: "c++",
+    version: "10.2.0",
+    extension: "cpp",
+    template: code => `
+#include <iostream>
+using namespace std;
+
+int main() {
+    ${code}
+    return 0;
+}`,
+    compile: true
+  },
+  nodejs: { 
+    engine: "node",
+    version: "15.8.0",
+    extension: "js",
+    template: code => code,
+    compile: false
+  },
+  c: { 
+    engine: "c",
+    version: "10.2.0",
+    extension: "c",
+    template: code => `
+#include <stdio.h>
+
+int main() {
+    ${code}
+    return 0;
+}`,
+    compile: true
+  },
+  ruby: { 
+    engine: "ruby",
+    version: "3.0.0",
+    extension: "rb",
+    template: code => code,
+    compile: false
+  },
+  go: { 
+    engine: "go",
+    version: "1.16.2",
+    extension: "go",
+    template: code => `
+package main
+
+import "fmt"
+
+func main() {
+    ${code}
+}`,
+    compile: true
+  },
+  swift: { 
+    engine: "swift",
+    version: "5.3.3",
+    extension: "swift",
+    template: code => code,
+    compile: true
+  },
+  rust: { 
+    engine: "rust",
+    version: "1.50.0",
+    extension: "rs",
+    template: code => `
+fn main() {
+    ${code}
+}`,
+    compile: true
+  },
+  csharp: { 
+    engine: "c#",
+    version: "5.0.201",
+    extension: "cs",
+    template: code => `
+using System;
+
+class Program {
+    static void Main() {
+        ${code}
+    }
+}`,
+    compile: true
+  }
 };
 
 // Enable CORS
-app.use(cors());
+app.use(cors({
+  origin: process.env.CLIENT_URL || "http://localhost:3000",
+  methods: ["GET", "POST"],
+  credentials: true
+}));
 
-// Parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     methods: ["GET", "POST"],
-  },
+    credentials: true
+  }
 });
 
-const userSocketMap = {};
+const userSocketMap = new Map();
+
 const getAllConnectedClients = (roomId) => {
-  return Array.from(io.sockets.adapter.rooms.get(roomId) || []).map(
-    (socketId) => {
-      return {
-        socketId,
-        username: userSocketMap[socketId],
-      };
-    }
-  );
+  const room = io.sockets.adapter.rooms.get(roomId);
+  if (!room) return [];
+  
+  return Array.from(room).map(socketId => ({
+    socketId,
+    username: userSocketMap.get(socketId)
+  }));
 };
 
 io.on("connection", (socket) => {
   socket.on(ACTIONS.JOIN, ({ roomId, username }) => {
-    userSocketMap[socket.id] = username;
+    userSocketMap.set(socket.id, username);
     socket.join(roomId);
+    
     const clients = getAllConnectedClients(roomId);
     clients.forEach(({ socketId }) => {
       io.to(socketId).emit(ACTIONS.JOINED, {
         clients,
         username,
-        socketId: socket.id,
+        socketId: socket.id
       });
     });
   });
 
   socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code }) => {
+    if (typeof code !== 'string') return;
     socket.in(roomId).emit(ACTIONS.CODE_CHANGE, { code });
   });
 
   socket.on(ACTIONS.SYNC_CODE, ({ socketId, code }) => {
+    if (typeof code !== 'string') return;
     io.to(socketId).emit(ACTIONS.CODE_CHANGE, { code });
   });
 
   socket.on("disconnecting", () => {
-    const rooms = [...socket.rooms];
+    const rooms = socket.rooms;
     rooms.forEach((roomId) => {
-      socket.in(roomId).emit(ACTIONS.DISCONNECTED, {
-        socketId: socket.id,
-        username: userSocketMap[socket.id],
-      });
+      if (roomId !== socket.id) {
+        socket.in(roomId).emit(ACTIONS.DISCONNECTED, {
+          socketId: socket.id,
+          username: userSocketMap.get(socket.id)
+        });
+      }
     });
-
-    delete userSocketMap[socket.id];
+    userSocketMap.delete(socket.id);
     socket.leave();
   });
 });
 
-app.post("/compile", async (req, res) => {
-  const { code, language } = req.body;
+const preprocessCode = (code, language) => {
+  const config = languageConfig[language];
+  if (!config) throw new Error(`Unsupported language: ${language}`);
+  return config.template(code);
+};
+
+const sanitizeOutput = (output) => {
+  if (!output) return '';
   
-  const pistonLangConfig = languageConfig[language];
-  if (!pistonLangConfig) {
-    return res.status(400).json({ error: "Unsupported language" });
+  // Convert undefined or null to empty string
+  let sanitized = output.toString();
+  
+  // Trim any whitespace
+  sanitized = sanitized.trim();
+  
+  // Remove literal \n and replace with actual newlines
+  sanitized = sanitized.replace(/\\n/g, '\n');
+  
+  // Remove any surrounding quotes (both single and double)
+  if ((sanitized.startsWith('"') && sanitized.endsWith('"')) || 
+      (sanitized.startsWith("'") && sanitized.endsWith("'"))) {
+    sanitized = sanitized.slice(1, -1);
   }
+  
+  return sanitized;
+};
 
-  const payload = {
-    language: pistonLangConfig.engine,
-    version: pistonLangConfig.version,
-    files: [
-      {
-        name: "code",
-        content: code,
-      },
-    ],
-  };
-
+app.post("/compile", async (req, res) => {
   try {
-    const response = await axios.post("https://emkc.org/api/v2/piston/execute", payload);
-    res.json(response.data.run.stdout.trim());
+    const { code, language } = req.body;
+    
+    if (!code || !language) {
+      return res.status(400).json({ 
+        error: "Missing required parameters: code and language" 
+      });
+    }
+
+    const config = languageConfig[language];
+    if (!config) {
+      return res.status(400).json({ 
+        error: `Unsupported language: ${language}` 
+      });
+    }
+
+    const processedCode = preprocessCode(code, language);
+    
+    const payload = {
+      language: config.engine,
+      version: config.version,
+      files: [{
+        name: `main.${config.extension}`,
+        content: processedCode
+      }],
+      stdin: "",
+    };
+
+    console.log("Sending to Piston:", payload);
+    const response = await axios.post(
+      "https://emkc.org/api/v2/piston/execute", 
+      payload
+    );
+    console.log("Piston response:", response.data);
+
+    let output = '';
+    
+    if (response.data.run.stdout) {
+      output += response.data.run.stdout;
+    }
+    
+    if (response.data.run.stderr) {
+      output += output ? `\nError:\n${response.data.run.stderr}` : response.data.run.stderr;
+    }
+
+    // Sanitize output and send plain text
+    const sanitizedOutput = sanitizeOutput(output);
+    res.send(sanitizedOutput);  // Sending plain text output
+
   } catch (error) {
-    console.error("Error compiling code:", error);
-    res.status(500).json({ error: "Failed to compile code" });
+    console.error("Execution error:", error);
+    res.status(500).json({ 
+      error: error.response?.data?.message || "Failed to compile code"
+    });
   }
+});
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    error: "Something went wrong!"
+  });
 });
 
 const PORT = process.env.PORT || 5000;
