@@ -212,9 +212,10 @@ const sanitizeOutput = (output) => {
   return sanitized;
 };
 
+// Updated compile endpoint with input handling
 app.post("/compile", async (req, res) => {
   try {
-    const { code, language } = req.body;
+    const { code, language, stdin } = req.body;
     
     if (!code || !language) {
       return res.status(400).json({ 
@@ -231,6 +232,7 @@ app.post("/compile", async (req, res) => {
 
     const processedCode = preprocessCode(code, language);
     
+    // Prepare payload with user input
     const payload = {
       language: config.engine,
       version: config.version,
@@ -238,7 +240,7 @@ app.post("/compile", async (req, res) => {
         name: `main.${config.extension}`,
         content: processedCode
       }],
-      stdin: "",
+      stdin: stdin || "", // Use provided input or empty string
     };
 
     console.log("Sending to Piston:", payload);
@@ -258,9 +260,9 @@ app.post("/compile", async (req, res) => {
       output += output ? `\nError:\n${response.data.run.stderr}` : response.data.run.stderr;
     }
 
-    // Sanitize output and send plain text
+    // Send sanitized output
     const sanitizedOutput = sanitizeOutput(output);
-    res.send(sanitizedOutput);  // Sending plain text output
+    res.send(sanitizedOutput);
 
   } catch (error) {
     console.error("Execution error:", error);
@@ -270,6 +272,7 @@ app.post("/compile", async (req, res) => {
   }
 });
 
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({

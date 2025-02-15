@@ -46,7 +46,7 @@
   
   .bg-dark.p-2 {
     display: flex;
-    justify-content: end;
+    justify-content:flex-end;
     padding: 10px;
     background-color: #343a40;
     border-bottom: 1px solid #444;
