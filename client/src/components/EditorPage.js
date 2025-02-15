@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Client from "./Client";
 import Editor from "./Editor";
 import ChatSection from "./ChatBotSection";
-import InputModal from "./InputModel"; // Ensure the file is named InputModal.js
+import InputModal from "./InputModel";
 import { initSocket } from "../Socket";
 import { ACTIONS } from "../Actions";
 import {
@@ -42,9 +42,8 @@ function EditorPage() {
   const [selectedLanguage, setSelectedLanguage] = useState("python3");
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // State for the Input Modal (for code execution input)
+  // State for the Input Modal
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
-  const [userInput, setUserInput] = useState("");
   const [tempCode, setTempCode] = useState(null);
 
   const codeRef = useRef(null);
@@ -54,19 +53,17 @@ function EditorPage() {
   const navigate = useNavigate();
   const { roomId } = useParams();
 
-  // Helper: Check if the code likely requires input.
+  // Helper: Check if the code likely requires input
   const codeNeedsInput = (code) => {
     if (!code) return false;
     switch (selectedLanguage) {
       case "python3":
         return code.includes("input(");
       case "c":
-        return code.includes("scanf(");
       case "cpp":
-        return code.includes("cin >>");
+        return code.includes("scanf(") || code.includes("cin >>");
       case "java":
         return code.includes("Scanner") || code.includes("BufferedReader");
-      // Add other languages and detection logic as needed.
       default:
         return false;
     }
@@ -129,7 +126,7 @@ function EditorPage() {
   const copyRoomId = async () => {
     try {
       await navigator.clipboard.writeText(roomId);
-      toast.success("Room ID is copied");
+      toast.success("Room ID has been copied");
     } catch (error) {
       console.error(error);
       toast.error("Unable to copy the room ID");
@@ -140,7 +137,7 @@ function EditorPage() {
     navigate("/");
   };
 
-  // Run code using the provided input (from the modal)
+  // Run code with the provided input
   const runCode = async (input) => {
     setIsCompiling(true);
     try {
@@ -165,18 +162,11 @@ function EditorPage() {
     if (codeNeedsInput(codeRef.current)) {
       setIsInputModalOpen(true);
     } else {
-      // If no input is detected, run code with empty input.
       runCode("");
     }
   };
 
   const handleModalClose = () => {
-    setIsInputModalOpen(false);
-    setUserInput("");
-  };
-
-  const handleModalSubmit = () => {
-    runCode(userInput);
     setIsInputModalOpen(false);
   };
 
@@ -202,7 +192,7 @@ function EditorPage() {
           <hr style={{ marginTop: "2rem" }} />
 
           <div className="d-flex flex-column flex-grow-1 overflow-auto">
-            <span className="mb-2">Members</span>
+            <span className="mb-2">Connected Users</span>
             {clients.map((client) => (
               <Client
                 key={client.socketId}
@@ -330,13 +320,13 @@ function EditorPage() {
         </div>
       )}
 
-      {/* Input Modal for Program Input (only pops up if input is needed) */}
+      {/* Input Modal */}
       <InputModal
         isOpen={isInputModalOpen}
         onClose={handleModalClose}
-        onSubmit={handleModalSubmit}
-        value={userInput}
-        onChange={(e) => setUserInput(e.target.value)}
+        onSubmit={runCode}
+        code={tempCode}
+        language={selectedLanguage}
       />
     </div>
   );
