@@ -1,89 +1,91 @@
-/* Root container styles */
+/* Make the editor header sticky so that it stays fixed on top during scrolling */
+.editor-header {
+  position: sticky;
+  top: 0;
+  z-index: 1100;
+  background-color: #343a40; /* match your bg-dark if needed */
+}
+
+/* Ensure the editor container takes remaining space */
+.editor-container {
+  flex-grow: 1;
+  overflow: auto;
+}
+
+/* Existing styles... */
 .container-fluid {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  
-  /* Row containing editor and sidebar */
-  .row {
-    flex-grow: 1;
-    display: flex;
-    overflow: hidden;
-  }
-  
-  /* Sidebar (Client panel) */
-  .col-md-2 {
-    display: flex;
-    flex-direction: column;
-    background-color: #1e1e2f;
-    color: white;
-    height: 100%;
-    overflow: hidden;
-  }
-  
-  .col-md-2 .flex-grow-1 {
-    overflow-y: auto;
-  }
-  
-  .col-md-2 hr {
-    border-color: #444;
-  }
-  
-  .col-md-2 button {
-    margin-bottom: 10px;
-  }
-  
-  /* Main editor panel */
-  .col-md-10 {
-    display: flex;
-    flex-direction: column;
-    background-color: #282c34;
-    height: 100%;
-    overflow: hidden;
-  }
-  
-  .bg-dark.p-2 {
-    display: flex;
-    justify-content:flex-end;
-    padding: 10px;
-    background-color: #343a40;
-    border-bottom: 1px solid #444;
-    z-index: 10;
-  }
-  
-  /* Editor container */
-  .editor-container {
-    flex-grow: 1;
-    overflow: hidden;
-  }
-  
-  /* Compiler Section */
-  .bg-dark.p-3 {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 30vh;
-    overflow-y: auto;
-    z-index: 1040;
-    transition: height 0.3s ease-in-out;
-  }
-  
-  .bg-dark.p-3.d-none {
-    height: 0;
-    overflow: hidden;
-  }
-  
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
-  
-  /* Floating buttons */
-  .btn.position-fixed {
-    z-index: 1050;
-  }
+.row {
+  flex-grow: 1;
+  display: flex;
+  overflow: hidden;
+}
 
-  /* EditorPage.css */
+.col-md-2 {
+  display: flex;
+  flex-direction: column;
+  background-color: #1e1e2f;
+  color: white;
+  height: 100%;
+  overflow: hidden;
+}
+
+.col-md-2 .flex-grow-1 {
+  overflow-y: auto;
+}
+
+.col-md-2 hr {
+  border-color: #444;
+}
+
+.col-md-2 button {
+  margin-bottom: 10px;
+}
+
+.col-md-10 {
+  display: flex;
+  flex-direction: column;
+  background-color: #282c34;
+  height: 100%;
+  overflow: hidden;
+}
+
+.bg-dark.p-2 {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px;
+  background-color: #343a40;
+  border-bottom: 1px solid #444;
+  z-index: 10;
+}
+
+.bg-dark.p-3 {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 30vh;
+  overflow-y: auto;
+  z-index: 1040;
+  transition: height 0.3s ease-in-out;
+}
+
+.bg-dark.p-3.d-none {
+  height: 0;
+  overflow: hidden;
+}
+
+/* Floating buttons */
+.btn.position-fixed {
+  z-index: 1050;
+}
+
+/* Existing form-control and pre element styles... */
 .form-control:focus {
   background-color: #2b2b2b;
   color: #fff;
@@ -96,11 +98,10 @@
 }
 
 pre {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
   background-color: #1e1e1e;
 }
 
-/* Custom scrollbar for the output pre element */
 pre::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -119,7 +120,6 @@ pre::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
 
-/* Textarea custom scrollbar */
 textarea::-webkit-scrollbar {
   width: 8px;
 }
@@ -136,4 +136,3 @@ textarea::-webkit-scrollbar-thumb {
 textarea::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
-  

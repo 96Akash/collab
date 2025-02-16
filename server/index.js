@@ -13,33 +13,176 @@ const languageConfig = {
     engine: "python", 
     version: "3.10",
     extension: "py",
-    template: code => code,
+    template: code => {
+      // Check if code contains imports
+      const lines = code.split('\n');
+      let imports = [];
+      let mainCode = [];
+      let hasClass = false;
+
+      lines.forEach(line => {
+        if (line.trim().startsWith("import ") || line.trim().startsWith("from ")) {
+          imports.push(line);
+        } else if (line.trim().startsWith("class ")) {
+          hasClass = true;
+          mainCode.push(line);
+        } else {
+          mainCode.push(line);
+        }
+      });
+
+      // If there are imports, place them at the top
+      if (imports.length > 0) {
+        return `${imports.join('\n')}\n\n${mainCode.join('\n')}`;
+      }
+
+      // If no special handling needed, return as is
+      return code;
+    },
     compile: false
   },
   java: { 
     engine: "java", 
     version: "15.0.2",
     extension: "java",
-    template: code => `
+    template: code => {
+      // Check if code already contains a class definition
+      if (code.includes("class ") || code.includes("public class ")) {
+        return code; // Return as-is if it already has a class definition
+      }
+      
+      // Check if code contains package or import statements
+      const lines = code.split('\n');
+      let imports = [];
+      let mainCode = [];
+      let hasPackage = false;
+      
+      lines.forEach(line => {
+        if (line.trim().startsWith("package ")) {
+          hasPackage = true;
+          imports.unshift(line); // Add package declaration at the start
+        } else if (line.trim().startsWith("import ")) {
+          imports.push(line);
+        } else {
+          mainCode.push(line);
+        }
+      });
+      
+      // If code doesn't have its own class, wrap it in a Main class
+      if (imports.length > 0 || hasPackage) {
+        return `${imports.join('\n')}
+
 public class Main {
+    public static void main(String[] args) {
+        ${mainCode.join('\n')}
+    }
+}`;
+      } else {
+        return `public class Main {
     public static void main(String[] args) {
         ${code}
     }
-}`,
+}`;
+      }
+    },
     compile: true
   },
   cpp: { 
     engine: "c++",
     version: "10.2.0",
     extension: "cpp",
-    template: code => `
-#include <iostream>
-using namespace std;
+    template: code => {
+      const lines = code.split('\n');
+      let includes = [];
+      let namespaces = [];
+      let mainCode = [];
+      let hasClass = false;
+      let hasMain = false;
 
-int main() {
-    ${code}
-    return 0;
-}`,
+      lines.forEach(line => {
+        if (line.trim().startsWith("#include")) {
+          includes.push(line);
+        } else if (line.trim().startsWith("using namespace")) {
+          namespaces.push(line);
+        } else if (line.trim().startsWith("class ")) {
+          hasClass = true;
+          mainCode.push(line);
+        } else if (line.trim().includes("main(")) {
+          hasMain = true;
+          mainCode.push(line);
+        } else {
+          mainCode.push(line);
+        }
+      });
+
+      // If no includes are present, add standard ones
+      if (includes.length === 0) {
+        includes.push("#include <iostream>");
+      }
+
+      // If no using namespace std, add it
+      if (!namespaces.some(ns => ns.includes("std"))) {
+        namespaces.push("using namespace std;");
+      }
+
+      // If no main function and no class definition, wrap in main
+      if (!hasMain && !hasClass) {
+        return `${includes.join('\n')}\n${namespaces.join('\n')}\n\nint main() {\n    ${mainCode.join('\n    ')}\n    return 0;\n}`;
+      }
+
+      // If has class but no main, add main after class
+      if (hasClass && !hasMain) {
+        return `${includes.join('\n')}\n${namespaces.join('\n')}\n\n${mainCode.join('\n')}\n\nint main() {\n    return 0;\n}`;
+      }
+
+      // If everything is present, just organize the code
+      return `${includes.join('\n')}\n${namespaces.join('\n')}\n\n${mainCode.join('\n')}`;
+    },
+    compile: true
+  },
+  c: { 
+    engine: "c",
+    version: "10.2.0",
+    extension: "c",
+    template: code => {
+      const lines = code.split('\n');
+      let includes = [];
+      let mainCode = [];
+      let hasMain = false;
+      let hasStruct = false;
+
+      lines.forEach(line => {
+        if (line.trim().startsWith("#include")) {
+          includes.push(line);
+        } else if (line.trim().startsWith("struct ")) {
+          hasStruct = true;
+          mainCode.push(line);
+        } else if (line.trim().includes("main(")) {
+          hasMain = true;
+          mainCode.push(line);
+        } else {
+          mainCode.push(line);
+        }
+      });
+
+      // If no includes are present, add stdio
+      if (includes.length === 0) {
+        includes.push("#include <stdio.h>");
+      }
+
+      // If no main function and no struct definition, wrap in main
+      if (!hasMain && !hasStruct) {
+        return `${includes.join('\n')}\n\nint main() {\n    ${mainCode.join('\n    ')}\n    return 0;\n}`;
+      }
+
+      // If has struct but no main, add main after struct
+      if (hasStruct && !hasMain) {
+        return `${includes.join('\n')}\n\n${mainCode.join('\n')}\n\nint main() {\n    return 0;\n}`;
+      }
+
+      // If everything is present, just organize the code
+      return `${includes.join('\n')}\n\n${mainCode.join('\n')}`;
+    },
     compile: true
   },
   nodejs: { 
@@ -48,19 +191,6 @@ int main() {
     extension: "js",
     template: code => code,
     compile: false
-  },
-  c: { 
-    engine: "c",
-    version: "10.2.0",
-    extension: "c",
-    template: code => `
-#include <stdio.h>
-
-int main() {
-    ${code}
-    return 0;
-}`,
-    compile: true
   },
   ruby: { 
     engine: "ruby",
@@ -188,6 +318,14 @@ io.on("connection", (socket) => {
 const preprocessCode = (code, language) => {
   const config = languageConfig[language];
   if (!config) throw new Error(`Unsupported language: ${language}`);
+  
+  // Remove any BOM or hidden characters
+  code = code.replace(/^\uFEFF/, '');
+  
+  // Trim whitespace but preserve newlines
+  code = code.replace(/^\s+|\s+$/g, '');
+  
+  // Handle specific language preprocessing
   return config.template(code);
 };
 
@@ -212,7 +350,6 @@ const sanitizeOutput = (output) => {
   return sanitized;
 };
 
-// Updated compile endpoint with input handling
 app.post("/compile", async (req, res) => {
   try {
     const { code, language, stdin } = req.body;
@@ -232,15 +369,23 @@ app.post("/compile", async (req, res) => {
 
     const processedCode = preprocessCode(code, language);
     
-    // Prepare payload with user input
+    // Determine the main class name for Java
+    let fileName = `main.${config.extension}`;
+    if (language === 'java') {
+      const classMatch = processedCode.match(/public\s+class\s+(\w+)/);
+      if (classMatch) {
+        fileName = `${classMatch[1]}.java`;
+      }
+    }
+    
     const payload = {
       language: config.engine,
       version: config.version,
       files: [{
-        name: `main.${config.extension}`,
+        name: fileName,
         content: processedCode
       }],
-      stdin: stdin || "", // Use provided input or empty string
+      stdin: stdin || "",
     };
 
     console.log("Sending to Piston:", payload);
@@ -260,7 +405,6 @@ app.post("/compile", async (req, res) => {
       output += output ? `\nError:\n${response.data.run.stderr}` : response.data.run.stderr;
     }
 
-    // Send sanitized output
     const sanitizedOutput = sanitizeOutput(output);
     res.send(sanitizedOutput);
 

@@ -190,7 +190,6 @@ function EditorPage() {
             style={{ maxWidth: "150px", marginTop: "20px" }}
           />
           <hr style={{ marginTop: "2rem" }} />
-
           <div className="d-flex flex-column flex-grow-1 overflow-auto">
             <span className="mb-2">Connected Users</span>
             {clients.map((client) => (
@@ -201,7 +200,6 @@ function EditorPage() {
               />
             ))}
           </div>
-
           <hr />
           <div className="mt-auto mb-3">
             <button className="btn btn-success w-100 mb-2" onClick={copyRoomId}>
@@ -215,7 +213,8 @@ function EditorPage() {
 
         {/* Main Editor Section */}
         <div className="col-md-10 text-light d-flex flex-column">
-          <div className="bg-dark p-2 d-flex justify-content-end">
+          {/* Top Header (Language selector & nav) */}
+          <div className="editor-header bg-dark p-2 d-flex justify-content-end">
             <select
               className="form-select w-auto"
               value={selectedLanguage}
@@ -228,13 +227,16 @@ function EditorPage() {
               ))}
             </select>
           </div>
-          <Editor
-            socketRef={socketRef}
-            roomId={roomId}
-            onCodeChange={(code) => {
-              codeRef.current = code;
-            }}
-          />
+          {/* Editor Container */}
+          <div className="editor-container flex-grow-1 position-relative">
+            <Editor
+              socketRef={socketRef}
+              roomId={roomId}
+              onCodeChange={(code) => {
+                codeRef.current = code;
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -281,7 +283,6 @@ function EditorPage() {
             </button>
           </div>
         </div>
-
         <pre className="bg-secondary p-3 rounded">
           {output || "Output will appear here after compilation"}
         </pre>

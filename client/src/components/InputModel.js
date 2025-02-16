@@ -7,7 +7,6 @@ function InputModal({ isOpen, onClose, onSubmit, code, language }) {
   
   useEffect(() => {
     if (isOpen) {
-      // Parse the code to find input variables based on language
       const foundInputs = parseCodeForInputs(code, language);
       setInputs(foundInputs);
       setCurrentInputIndex(0);
@@ -17,12 +16,12 @@ function InputModal({ isOpen, onClose, onSubmit, code, language }) {
 
   const parseCodeForInputs = (code, language) => {
     let inputMatches = [];
+    let match;
     
     switch (language) {
       case 'python3':
         // Match input() statements with variable names
         const pythonRegex = /(\w+)\s*=\s*input\s*\([^)]*\)/g;
-        let match;
         while ((match = pythonRegex.exec(code)) !== null) {
           inputMatches.push({
             variable: match[1],
@@ -40,9 +39,77 @@ function InputModal({ isOpen, onClose, onSubmit, code, language }) {
             prompt: `Enter value for ${match[1]}`
           });
         }
+        // Also match scanf statements
+        const cppScanfRegex = /scanf\s*\(\s*"[^"]*"\s*,\s*&(\w+)\s*\)/g;
+        while ((match = cppScanfRegex.exec(code)) !== null) {
+          inputMatches.push({
+            variable: match[1],
+            prompt: `Enter value for ${match[1]}`
+          });
+        }
+        break;
+
+      case 'c':
+        // Match scanf statements for C
+        const cScanfRegex = /scanf\s*\(\s*"[^"]*"\s*,\s*&(\w+)\s*\)/g;
+        while ((match = cScanfRegex.exec(code)) !== null) {
+          inputMatches.push({
+            variable: match[1],
+            prompt: `Enter value for ${match[1]}`
+          });
+        }
+        break;
+
+      case 'java':
+        // Match Scanner nextInt(), nextLine(), etc.
+        const scannerRegex = /(\w+)\s*=\s*\w+\.(next(?:Int|Double|Line|Float)*)\(\s*\)/g;
+        while ((match = scannerRegex.exec(code)) !== null) {
+          inputMatches.push({
+            variable: match[1],
+            prompt: `Enter value for ${match[1]}`
+          });
+        }
+        // Match BufferedReader readLine()
+        const readerRegex = /(\w+)\s*=\s*\w+\.readLine\(\s*\)/g;
+        while ((match = readerRegex.exec(code)) !== null) {
+          inputMatches.push({
+            variable: match[1],
+            prompt: `Enter value for ${match[1]}`
+          });
+        }
+        break;
+
+      case 'nodejs':
+        // Match process.stdin or readline inputs
+        const nodeRegex = /(\w+)\s*=\s*(?:readline\(\)|process\.stdin)/g;
+        while ((match = nodeRegex.exec(code)) !== null) {
+          inputMatches.push({
+            variable: match[1],
+            prompt: `Enter value for ${match[1]}`
+          });
+        }
+        break;
+
+      case 'ruby':
+        // Match gets and gets.chomp
+        const rubyRegex = /(\w+)\s*=\s*gets(?:\.chomp)?\s*/g;
+        while ((match = rubyRegex.exec(code)) !== null) {
+          inputMatches.push({
+            variable: match[1],
+            prompt: `Enter value for ${match[1]}`
+          });
+        }
         break;
         
-      // Add cases for other languages as needed
+      default:
+        // Generic fallback for other languages
+        const genericRegex = /(?:input|scanf|readLine|read)\s*\([^)]*\)/g;
+        while ((match = genericRegex.exec(code)) !== null) {
+          inputMatches.push({
+            variable: `input${inputMatches.length + 1}`,
+            prompt: `Enter input value ${inputMatches.length + 1}`
+          });
+        }
     }
     
     return inputMatches;
@@ -52,23 +119,19 @@ function InputModal({ isOpen, onClose, onSubmit, code, language }) {
     e.preventDefault();
     
     if (currentInputIndex < inputs.length - 1) {
-      // More inputs to collect
       inputs[currentInputIndex].value = currentValue;
       setCurrentInputIndex(prev => prev + 1);
       setCurrentValue('');
     } else {
-      // Last input - submit all collected inputs
       const finalInputs = [
         ...inputs.slice(0, currentInputIndex),
         { ...inputs[currentInputIndex], value: currentValue }
       ];
       
-      // Convert collected inputs to proper format
       const formattedInput = finalInputs
         .map(input => input.value)
         .join('\n');
       
-      // Submit the code and close the modal
       onSubmit(formattedInput);
       onClose();
     }
@@ -121,11 +184,29 @@ function InputModal({ isOpen, onClose, onSubmit, code, language }) {
                 <input
                   type="text"
                   id="programInput"
-                  className="form-control bg-dark text-light border-secondary"
+                  className="form-control bg-dark text-light"
+                  style={{
+                    border: '2px solidrgb(234, 241, 234)',
+                    borderRadius: '4px',
+                    outline: 'none',
+                    boxShadow: 'none'
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.boxShadow = 'none';
+                    e.target.style.border = '2px solidrgb(243, 250, 243)';
+                  }}
                   value={currentValue}
                   onChange={(e) => setCurrentValue(e.target.value)}
                   autoFocus
                 />
+                <style>
+                  {`
+                    .form-control:focus {
+                      border-color:rgb(255, 255, 255) !important;
+                      box-shadow: none !important;
+                    }
+                  `}
+                </style>
               </>
             )}
           </div>
