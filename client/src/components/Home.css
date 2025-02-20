@@ -1,4 +1,213 @@
+/* Global styles */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+}
+
+/* Container that takes full viewport height */
 .container-fluid {
-    background: url('../img/img.jpeg');
-    background-size: cover;
+  background-color: #f2f2f2;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column; /* Add this line to stack children vertically */
+      /* Center children horizontally */
+  padding: 0;
+}
+
+
+/* Full container to wrap the left image and card */
+.full-container {
+  display: flex;
+  align-items:center;
+  justify-content: center;
+}
+
+/* Left image container */
+.left-image-container {
+  margin-right: 20px; /* Adjust spacing between the left image and card */
+}
+
+/* Styling for the left-side image */
+.left-image {
+  position: relative;
+  left: 0;
+  opacity: 0.3;
+  width: 680px; /* Adjust size as needed */
+  height: auto;
+  border-radius: 10px; /* Optional: for rounded corners */
+}
+
+/* Right-aligned content (card container) */
+.right-aligned-content {
+  margin-right: 50px; /* Adjust the right margin as needed */
+}
+
+/* Card styling */
+.card {
+  width: 500px;
+  border: none;
+  border-radius: 15px;
+  box-shadow: 0 5px 15px rgba(235, 11, 11, 0.1);
+}
+
+/* Custom card background */
+.new_name1 {
+  background: #222;
+  padding: 0;
+}
+
+/* Updated card body layout to position the form on the left and image on the right */
+.new_name {
+  background-color: #c5aecc !important;
+  color: rgb(0, 0, 0);
+  padding: 2rem;
+  display: flex;
+  flex-direction: row;         /* Changed from column to row */
+  justify-content: space-between; /* Align form and image on opposite ends */
+  align-items: center;          /* Vertically center the items */
+  border-radius: 15px;
+}
+
+/* Allow the form container to take available space */
+.flex-grow-1 {
+  flex: 1;
+}
+
+/* Container for the right-side image */
+.image-container {
+  margin-left: 20px; /* Spacing between form and image */
+  flex-shrink: 0;
+}
+
+/* Styling for the right-side image */
+.right-image {
+  width: 200px;  /* Adjust width as needed */
+  height: auto;
+}
+
+.card-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-left: 15px;
+  margin-bottom: 2.0rem;
+  color: black;
+}
+
+/* Form styling */
+.form-group {
+  width: 90%;
+  margin-bottom: 1rem;
+}
+
+.form-control {
+  padding: 0.75rem 1rem;
+  border: 1px solid #000000;
+  border-radius: 8px;
+  width: 100%;
+  font-size: 1rem;
+  background-color: #333;
+  color: white;
+}
+
+.form-control::placeholder {
+  color: #aaa;
+}
+
+.form-control:focus {
+  border-color: #000000;
+  outline: none;
+  box-shadow: 0 0 20px 5px rgba(114, 116, 115, 0.863) !important;
+}
+
+/* Button styling */
+.btn-success {
+  width: 90%;
+  padding: 0.75rem;
+  margin: 0px;
+  border: none;
+  border-radius: 8px;
+  background-color: #ff4040;
+  color: white;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+.btn-success:hover {
+  background-color: #e03030;
+  box-shadow: 0 0 3px 2px rgba(114, 116, 115, 0.863) !important;
+}
+
+/* Paragraph styling */
+p.mt-3 {
+  margin-top: 1.5rem;
+  color: #aaa;
+  text-align: center;
+  margin-right: 30px;
+}
+
+.text-success {
+  color: #ff4040 !important;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.text-success:hover {
+  text-decoration: underline;
+}
+
+/* Image styling for logo or other images */
+.img-fluid {
+  max-width: 120px !important;
+  margin-bottom: 1.5rem;
+  border-radius: 10px;
+}
+
+/* Responsive behavior */
+@media (max-width: 768px) {
+  .container-fluid {
+    justify-content: center;
   }
+  .right-aligned-content {
+    margin-right: 0;
+  }
+  
+  /* Stack the form and image vertically on smaller screens */
+  .new_name {
+    flex-direction: column;
+  }
+  
+  .image-container {
+    margin-left: 0;
+    margin-top: 1rem;
+  }
+  
+  /* Stack the left image and card vertically */
+  .full-container {
+    flex-direction: column;
+  }
+  
+  .left-image-container {
+    margin-right: 0;
+    margin-bottom: 1rem;
+  }
+}
+
+/* Header text styling */
+.header-text {
+  font-weight: lighter;
+  margin-bottom: 20px; /* Adjust spacing as needed */
+  position: fixed;
+  bottom: 0;
+  padding-left: 500px;
+  padding-right: 500px;
+  z-index: 1000;
+}
+
+.logo img{
+  width: 120px !important;
+  position: fixed;
+  margin: 30px;
+}

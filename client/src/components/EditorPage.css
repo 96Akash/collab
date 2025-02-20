@@ -136,3 +136,8 @@ textarea::-webkit-scrollbar-thumb {
 textarea::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+.run-btn{
+  width: 100px;
+  margin-bottom: 15px;
+}

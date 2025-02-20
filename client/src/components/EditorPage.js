@@ -241,13 +241,16 @@ function EditorPage() {
       </div>
 
       {/* Compiler Window Toggle Button */}
-      <button
-        className="btn btn-primary position-fixed bottom-0 end-0 m-3"
-        onClick={toggleCompileWindow}
-        style={{ zIndex: 1050 }}
-      >
-        {isCompileWindowOpen ? "Close Compiler" : "Open Compiler"}
-      </button>
+      {!isCompileWindowOpen && (
+        <button
+          className="btn btn-primary position-fixed bottom-0 end-0 m-3"
+          onClick={toggleCompileWindow}
+          style={{ zIndex: 1050 }}
+        >
+          Open Compiler
+        </button>
+      )}
+      
 
       {/* Compiler Window */}
       <div
@@ -269,14 +272,14 @@ function EditorPage() {
           <h5 className="m-0">Compiler Output ({selectedLanguage})</h5>
           <div>
             <button
-              className="btn btn-success me-2"
+              className="btn btn-success me-2 run-btn"
               onClick={handleRunClick}
               disabled={isCompiling}
             >
               {isCompiling ? "Compiling..." : "Run Code"}
             </button>
             <button
-              className="btn btn-secondary"
+              className="btn btn-secondary close-btn"
               onClick={toggleCompileWindow}
             >
               Close
