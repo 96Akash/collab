@@ -1,0 +1,126 @@
+/* Main Chat Container (Same Size) */
+.changelog-container {
+    display: flex;
+    flex-direction: column;
+    height: 80vh; /* Keeping the same height */
+    width: 30vw; /* Keeping the same width */
+    max-width: 400px; /* No change */
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Messages Container */
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Custom Scrollbar */
+.messages-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+}
+
+/* Message Bubble */
+.message-item {
+    max-width: 75%;
+    padding: 10px 14px;
+    border-radius: 18px;
+    word-wrap: break-word;
+    font-size: 14px;
+    line-height: 1.4;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease-in-out;
+}
+
+/* Sent (Your Messages) */
+.message-item.sent {
+    align-self: flex-end;
+    background: #0078d4;
+    color: white;
+    border-radius: 18px 18px 0 18px;
+    text-align: left;
+}
+
+/* Received (Other Users) */
+.message-item.received {
+    align-self: flex-start;
+    background: #f1f1f1;
+    color: black;
+    border-radius: 18px 18px 18px 0;
+    text-align: left;
+}
+
+/* Username & Timestamp */
+.message-header {
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 3px;
+    display: flex;
+    justify-content: space-between;
+    opacity: 0.7;
+}
+
+/* Styling for Username */
+.username {
+    color: #333;
+}
+
+/* Timestamp */
+.timestamp {
+    font-size: 10px;
+    opacity: 0.6;
+}
+
+/* Message Input Box */
+.message-input-form {
+    display: flex;
+    padding: 12px;
+    background: #f9f9f9;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Input Field */
+.message-input {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    outline: none;
+}
+
+/* Send Button */
+.send-button {
+    padding: 10px 16px;
+    background: #0078d4;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-left: 8px;
+    transition: 0.2s ease-in-out;
+}
+
+.send-button:hover {
+    background: #0056b3;
+    transform: scale(1.05);
+}
