@@ -264,56 +264,207 @@ const io = new Server(server, {
 });
 
 const userSocketMap = new Map();
+const roomHistory = new Map();
+const roomChatHistory = new Map(); // Store chat history per room
+const activeRooms = new Map(); // Track active users in each room
+const userSessions = new Map(); // Track user sessions per room
+// Add debug logging for user tracking
+const logRoomUsers = (roomId) => {
+  const users = getAllConnectedClients(roomId);
+  console.log(`Current users in room ${roomId}:`, users.map(u => `${u.username} (${u.socketId})`));
+};
 
 const getAllConnectedClients = (roomId) => {
   const room = io.sockets.adapter.rooms.get(roomId);
   if (!room) return [];
   
-  return Array.from(room).map(socketId => ({
-    socketId,
-    username: userSocketMap.get(socketId)
-  }));
+  return Array.from(room)
+    .filter(socketId => userSocketMap.has(socketId)) // Only return users that are properly mapped
+    .map(socketId => ({
+      socketId,
+      username: userSocketMap.get(socketId)
+    }));
 };
 
+
+
 io.on("connection", (socket) => {
+  console.log(`🟢 New client connected: ${socket.id}`);
+
+  socket.on("JOIN_CHAT", ({ roomId, username }) => {
+    if (!username) {
+      console.log(`⚠️ Rejected join attempt without username for socket ${socket.id}`);
+      return;
+    }
+
+ // Check for existing socket with same username in the room
+ const previousSocket = findSocketByUsername(roomId, username);
+ if (previousSocket) {
+   // Remove old socket from room and maps
+   handleUserLeaving(io.sockets.sockets.get(previousSocket), roomId);
+   io.sockets.sockets.get(previousSocket)?.disconnect(true);
+ }
+
+    userSocketMap.set(socket.id, username); // Set username immediately
+    socket.join(roomId);
+    console.log(`👥 ${username} joined room: ${roomId}`);
+   
+
+   // Initialize room chat history if it doesn't exist
+   if (!roomChatHistory.has(roomId)) {
+    roomChatHistory.set(roomId, []);
+  }
+
+    // Track active users in the room
+    if (!activeRooms.has(roomId)) {
+      activeRooms.set(roomId, new Set());
+    }
+    activeRooms.get(roomId).add(socket.id);
+
+    // Send existing chat history to the new user
+    socket.emit("CHAT_HISTORY", roomChatHistory.get(roomId));
+  });
+
   socket.on(ACTIONS.JOIN, ({ roomId, username }) => {
+    if (!username) {
+      console.log(`⚠️ Rejected join action without username for socket ${socket.id}`);
+      return;
+    }
+
     userSocketMap.set(socket.id, username);
     socket.join(roomId);
-    
+    console.log(`📌 ${username} joined room: ${roomId}`);
+    logRoomUsers(roomId);
+
+    if (!roomHistory.has(roomId)) {
+      roomHistory.set(roomId, { code: "" });
+    }
+
     const clients = getAllConnectedClients(roomId);
+
     clients.forEach(({ socketId }) => {
       io.to(socketId).emit(ACTIONS.JOINED, {
         clients,
         username,
-        socketId: socket.id
+        socketId: socket.id,
+        history: roomHistory.get(roomId)
       });
     });
   });
+  // Handle message sending
+  socket.on(ACTIONS.SEND_MESSAGE, ({ roomId, message, username }) => {
+    console.log(`📩 ${username} sent message: "${message}" in room: ${roomId}`);
+
+    const chatMessage = { username, message, timestamp: new Date() };
+   
+
+    io.in(roomId).emit(ACTIONS.RECEIVE_MESSAGE, chatMessage);
+  });
+
+  socket.on("SEND_MESSAGE", (data) => {
+    const { roomId, username, message } = data;
+    if (!username || !userSocketMap.has(socket.id)) {
+      console.log(`⚠️ Rejected message from unregistered user: ${socket.id}`);
+      return;
+    }
+    const now = new Date();
+    const formattedTime = now.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit'
+    });
+
+    const chatMessage = {
+      username,
+      message,
+      timestamp: formattedTime,
+      id: Date.now() // Add unique ID for each message
+    };
+
+    // Add message to room's chat history
+    if (roomChatHistory.has(roomId)) {
+      roomChatHistory.get(roomId).push(chatMessage);
+    }
+
+    // Broadcast to all users in the room (including sender)
+    io.in(roomId).emit("RECEIVE_MESSAGE", chatMessage);
+  });
+
+  socket.on("LEAVE_CHAT", ({ roomId, username }) => {
+    if (!username || !userSocketMap.has(socket.id)) {
+      console.log(`⚠️ Rejected leave request from unregistered user: ${socket.id}`);
+      return;
+    }
+
+    handleUserLeaving(socket, roomId);
+    // socket.to(roomId).emit("USER_LEFT", {
+    //   username,
+    //   socketId: socket.id
+    // });
+  });
 
   socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code }) => {
-    if (typeof code !== 'string') return;
-    socket.in(roomId).emit(ACTIONS.CODE_CHANGE, { code });
+    if (!roomHistory.has(roomId)) return;
+    roomHistory.get(roomId).code = code;
+    socket.to(roomId).emit(ACTIONS.CODE_CHANGE, { code }); // Broadcast only to room
   });
 
   socket.on(ACTIONS.SYNC_CODE, ({ socketId, code }) => {
-    if (typeof code !== 'string') return;
     io.to(socketId).emit(ACTIONS.CODE_CHANGE, { code });
   });
 
-  socket.on("disconnecting", () => {
-    const rooms = socket.rooms;
-    rooms.forEach((roomId) => {
-      if (roomId !== socket.id) {
-        socket.in(roomId).emit(ACTIONS.DISCONNECTED, {
-          socketId: socket.id,
-          username: userSocketMap.get(socket.id)
-        });
-      }
-    });
+   // Handle disconnection
+   socket.on("disconnect", () => {
+    const userRoomId = findUserRoom(socket.id);
+    if (userRoomId) {
+      const username = userSocketMap.get(socket.id);
+      handleUserLeaving(socket, userRoomId);
+      
+      // Notify others about user disconnection
+      socket.to(userRoomId).emit("USER_LEFT", {
+        username,
+        socketId: socket.id
+      });
+    }
     userSocketMap.delete(socket.id);
-    socket.leave();
+    console.log(`🔴 Client disconnected: ${socket.id}`);
   });
 });
+// Helper function to find socket by username in a room
+function findSocketByUsername(roomId, username) {
+  const clients = getAllConnectedClients(roomId);
+  const existingClient = clients.find(client => client.username === username);
+  return existingClient ? existingClient.socketId : null;
+}
+
+// Helper function to find user's room
+function findUserRoom(socketId) {
+  for (const [roomId, users] of activeRooms.entries()) {
+    if (users.has(socketId)) {
+      return roomId;
+    }
+  }
+  return null;
+}
+
+function handleUserLeaving(socket, roomId) {
+  if (!socket) return;
+  
+  const username = userSocketMap.get(socket.id);
+  socket.leave(roomId);
+  
+  if (activeRooms.has(roomId)) {
+    activeRooms.get(roomId).delete(socket.id);
+
+    // Only clear room history if it's the last user
+    if (activeRooms.get(roomId).size === 0) {
+      console.log(`🧹 Clearing history for empty room: ${roomId}`);
+      roomChatHistory.delete(roomId);
+      activeRooms.delete(roomId);
+    }
+  }
+}
+
+
 
 const preprocessCode = (code, language) => {
   const config = languageConfig[language];

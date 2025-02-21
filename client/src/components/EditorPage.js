@@ -5,6 +5,7 @@ import ChatSection from "./ChatBotSection";
 import InputModal from "./InputModel";
 import { initSocket } from "../Socket";
 import { ACTIONS } from "../Actions";
+import ChatBox from "./Chat";
 import {
   useNavigate,
   useLocation,
@@ -35,6 +36,8 @@ const LANGUAGES = [
 ];
 
 function EditorPage() {
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+
   const [clients, setClients] = useState([]);
   const [output, setOutput] = useState("");
   const [isCompileWindowOpen, setIsCompileWindowOpen] = useState(false);
@@ -68,6 +71,45 @@ function EditorPage() {
         return false;
     }
   };
+  const languageToExtension = {
+    python3: "py",
+    java: "java",
+    cpp: "cpp",
+    nodejs: "js",
+    c: "c",
+    ruby: "rb",
+    go: "go",
+    scala: "scala",
+    bash: "sh",
+    sql: "sql",
+    pascal: "pas",
+    csharp: "cs",
+    php: "php",
+    swift: "swift",
+    rust: "rs",
+    r: "r",
+  };
+  
+  const handleSaveFile = () => {
+    if (!codeRef.current) {
+      toast.error("No code to save!");
+      return;
+    }
+  
+    const fileName = prompt("Enter file name:", "code"); // Ask for filename
+    if (!fileName) return; // Stop if user cancels
+  
+    const fileExtension = languageToExtension[selectedLanguage] || "txt"; // Get correct extension
+    const blob = new Blob([codeRef.current], { type: "text/plain" });
+    const link = document.createElement("a");
+  
+    link.href = URL.createObjectURL(blob);
+    link.download = `${fileName}.${fileExtension}`; // Set filename with extension
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
 
   useEffect(() => {
     const init = async () => {
@@ -86,6 +128,12 @@ function EditorPage() {
         roomId,
         username: location.state?.username,
       });
+      socketRef.current.emit(ACTIONS.JOIN, {
+        roomId,
+        username: location.state?.username,
+      });
+      console.log(`User Joined - Username: ${location.state?.username}, Room ID: ${roomId}`);
+      
 
       socketRef.current.on(
         ACTIONS.JOINED,
@@ -137,6 +185,10 @@ function EditorPage() {
     navigate("/");
   };
 
+
+
+
+
   // Run code with the provided input
   const runCode = async (input) => {
     setIsCompiling(true);
@@ -164,10 +216,6 @@ function EditorPage() {
     } else {
       runCode("");
     }
-  };
-
-  const handleModalClose = () => {
-    setIsInputModalOpen(false);
   };
 
   const toggleCompileWindow = () => {
@@ -239,8 +287,28 @@ function EditorPage() {
           </div>
         </div>
       </div>
+      
+        {/* ChangeLog Toggle Button */}
+        <button
+  className="btn btn-warning position-fixed changelog-button"
+  onClick={() => setIsChangelogOpen((prev) => !prev)}
+>
+  {isChangelogOpen ? "Close Communication" : "Open Communication"}
+</button>
+      {/* ChangeLog Section */}
+      {isChangelogOpen && (
+  <div
+    className="changelog-container bg-light text-dark p-3"
+  >
+     <ChatBox onClose={() => setIsChangelogOpen(false)} 
+      username={location.state?.username} 
+      roomId={roomId} 
+      />
+  </div>
+)}
 
       {/* Compiler Window Toggle Button */}
+
       {!isCompileWindowOpen && (
         <button
           className="btn btn-primary position-fixed bottom-0 end-0 m-3"
@@ -323,15 +391,13 @@ function EditorPage() {
           <ChatSection onClose={toggleChat} />
         </div>
       )}
+    {/* <ChatComponent onClose={() => setIsChangelogOpen(false)} />  */}
 
       {/* Input Modal */}
-      <InputModal
-        isOpen={isInputModalOpen}
-        onClose={handleModalClose}
-        onSubmit={runCode}
-        code={tempCode}
-        language={selectedLanguage}
-      />
+      <InputModal isOpen={isInputModalOpen} onClose={() => setIsInputModalOpen(false)} onSubmit={runCode} code={tempCode} language={selectedLanguage} />
+
+
+
     </div>
   );
 }

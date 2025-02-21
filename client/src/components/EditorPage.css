@@ -136,8 +136,46 @@ textarea::-webkit-scrollbar-thumb {
 textarea::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
-
-.run-btn{
-  width: 100px;
-  margin-bottom: 15px;
+.changelog-button {
+  top: 8px;
+  right: 250px;
+  z-index: 1050;
 }
+
+.changelog-container {
+  background: #f8f9fa;
+  border: 1px solid #ccc;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  width: 100vw;
+  height: 50vh;
+  border-radius: 20px;
+  overflow-y: auto;
+  z-index: 2020;
+}
+
+
+.save-file-btn {
+  position: fixed;
+  top: 8px;
+  right: 450px; /* Move it further left to prevent overlap */
+  z-index: 1050;
+  background-color: #6c757d;
+  color: white;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.save-file-btn:hover {
+  background-color: #5a6268;
+  transform: scale(1.05);
+}
+
+
