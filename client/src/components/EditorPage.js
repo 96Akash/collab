@@ -307,6 +307,7 @@ function EditorPage() {
   </div>
 )}
 
+
       {/* Compiler Window Toggle Button */}
 
       {!isCompileWindowOpen && (
@@ -318,7 +319,12 @@ function EditorPage() {
           Open Compiler
         </button>
       )}
-      
+       <button
+  className="save-file-btn"
+  onClick={handleSaveFile}
+>
+  Save File
+</button>
 
       {/* Compiler Window */}
       <div
