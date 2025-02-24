@@ -178,4 +178,9 @@ textarea::-webkit-scrollbar-thumb:hover {
   transform: scale(1.05);
 }
 
+.run-btn{
+  width: 100px;
+  margin-bottom: 15px;
+}
+
 

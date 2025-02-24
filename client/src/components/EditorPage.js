@@ -232,10 +232,10 @@ function EditorPage() {
         {/* Sidebar */}
         <div className="col-md-2 bg-dark text-light d-flex flex-column">
           <img
-            src="/images/logo5.jpg"
+            src="/images/logo3.jpeg"
             alt="Logo"
             className="img-fluid mx-auto"
-            style={{ maxWidth: "150px", marginTop: "20px" }}
+            style={{ maxWidth: "150px", marginTop: "20px",borderradius:"0px" }}
           />
           <hr style={{ marginTop: "2rem" }} />
           <div className="d-flex flex-column flex-grow-1 overflow-auto">
@@ -311,13 +311,19 @@ function EditorPage() {
 
       {!isCompileWindowOpen && (
         <button
-          className="btn btn-primary position-fixed bottom-0 end-0 m-3"
+          className="btn btn-primary btn-com position-fixed bottom-0 end-0 m-3"
           onClick={toggleCompileWindow}
           style={{ zIndex: 1050 }}
         >
           Open Compiler
         </button>
       )}
+        <button
+        className="save-file-btn"
+        onClick={handleSaveFile}
+        >
+        Save File
+        </button>
       
 
       {/* Compiler Window */}
