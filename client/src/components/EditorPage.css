@@ -142,18 +142,23 @@ textarea::-webkit-scrollbar-thumb:hover {
   z-index: 1050;
 }
 
+Chat Component Styles
+
+/* Chat Container */
 .changelog-container {
   background: #f8f9fa;
   border: 1px solid #ccc;
   box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
   position: fixed;
-  bottom: 0;
-  right: 0;
-  width: 100vw;
-  height: 50vh;
-  border-radius: 20px;
-  overflow-y: auto;
+  bottom: 20px;
+  right: 20px;
+  width: 400px;  /* Fixed width instead of 100vw */
+  height: 600px; /* Fixed height instead of 50vh */
+  border-radius: 12px;
+  overflow: hidden;
   z-index: 2020;
+  display: flex;
+  flex-direction: column;
 }
 
 
