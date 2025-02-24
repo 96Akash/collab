@@ -44,7 +44,9 @@ function Home() {
     <div className="logo">
       <img src="/images/logo5.jpg" alt="logo"></img>
     </div>
+    <div className="Footer">
     <p className="header-text">"Where Coders Connect & Ideas Flow"</p>
+    </div>
 
       <div className="full-container">
         {/* Left-side image (outside the card) */}

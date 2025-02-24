@@ -95,6 +95,8 @@ function EditorPage() {
       toast.error("No code to save!");
       return;
     }
+
+    
   
     const fileName = prompt("Enter file name:", "code"); // Ask for filename
     if (!fileName) return; // Stop if user cancels
@@ -110,6 +112,50 @@ function EditorPage() {
     document.body.removeChild(link);
   };
   
+  // Add this new function after your existing functions
+const handleFileImport = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // Check file extension matches selected language
+  const fileExtension = file.name.split('.').pop();
+  const expectedExtension = languageToExtension[selectedLanguage];
+  
+  if (fileExtension !== expectedExtension) {
+    toast.error(`Please select a ${expectedExtension} file for ${selectedLanguage}`);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const content = e.target.result;
+    // Update the editor content
+    if (socketRef.current) {
+      socketRef.current.emit(ACTIONS.CODE_CHANGE, {
+        roomId,
+        code: content,
+      });
+    }
+    codeRef.current = content;
+   // Force editor update by emitting a SYNC_CODE event
+   if (socketRef.current) {
+    socketRef.current.emit(ACTIONS.SYNC_CODE, {
+      code: content,
+      socketId: socketRef.current.id,
+    });
+  }
+  
+  toast.success('File imported successfully');
+  
+  // Clear the file input for future imports
+  event.target.value = '';
+  };
+  reader.onerror = () => {
+    toast.error('Error reading file');
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+};
 
   useEffect(() => {
     const init = async () => {
@@ -307,6 +353,7 @@ function EditorPage() {
   </div>
 )}
 
+
       {/* Compiler Window Toggle Button */}
 
       {!isCompileWindowOpen && (
@@ -318,13 +365,33 @@ function EditorPage() {
           Open Compiler
         </button>
       )}
+
         <button
         className="save-file-btn"
         onClick={handleSaveFile}
         >
         Save File
         </button>
-      
+      <input
+  type="file"
+  id="file-import"
+  accept={`.${languageToExtension[selectedLanguage]}`}
+  onChange={handleFileImport}
+  style={{ display: 'none' }}
+/>
+<button
+  className="import-file-btn"
+  onClick={() => document.getElementById('file-import').click()}
+>
+  Import File
+</button>
+       <button
+  className="save-file-btn"
+  onClick={handleSaveFile}
+>
+  Save File
+</button>
+
 
       {/* Compiler Window */}
       <div
