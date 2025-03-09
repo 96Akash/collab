@@ -339,7 +339,7 @@ const handleFileImport = (event) => {
   className="btn btn-warning position-fixed changelog-button"
   onClick={() => setIsChangelogOpen((prev) => !prev)}
 >
-  {isChangelogOpen ? "Close Communication" : "Open Communication"}
+  {isChangelogOpen ? "Close Chat" : "Open Chat"}
 </button>
       {/* ChangeLog Section */}
       {isChangelogOpen && (
@@ -443,7 +443,7 @@ const handleFileImport = (event) => {
           zIndex: 1050,
         }}
       >
-        {isChatOpen ? "Close Chat" : "Open Chat"}
+        {isChatOpen ? "Close Chat" : "AI Chat"}
       </button>
 
       {/* Chat Section */}
