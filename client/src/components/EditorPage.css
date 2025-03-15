@@ -165,7 +165,7 @@ Chat Component Styles
 .save-file-btn {
   position: fixed;
   top: 8px;
-  right: 450px; /* Move it further left to prevent overlap */
+  right: 370px; /* Move it further left to prevent overlap */
   z-index: 1050;
   background-color: #6c757d;
   color: white;
@@ -194,7 +194,7 @@ Chat Component Styles
   position: fixed;
   top: 8px;
   /* left: calc(20% + 100px); Positioned right after save button */
-  right:560px;
+  right:480px;
   z-index: 1050;
   padding: 7px 16px;
   background-color: #316da1;

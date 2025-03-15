@@ -570,6 +570,7 @@ function EditorPage() {
       >
         {isChangelogOpen ? "Close Chat" : "Open Chat"}
       </button>
+
       {/* ChangeLog Section */}
       {isChangelogOpen && (
         <div
@@ -660,7 +661,9 @@ function EditorPage() {
           zIndex: 1050,
         }}
       >
+
         {isChatOpen ? "Close AI" : "AI Chat"}
+
       </button>
 
       {/* Chat Section */}
