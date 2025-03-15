@@ -29,16 +29,15 @@ const LetterAvatar = ({ username }) => {
       className="avatar"
       style={{
         backgroundColor,
-        width: '32px',
-        height: '32px',
+        width: '24px', // Reduced size for better appearance
+        height: '24px', // Reduced size for better appearance
         borderRadius: '50%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         color: 'white',
         fontWeight: '600',
-        fontSize: '14px',
-        marginRight: '8px'
+        fontSize: '12px' // Smaller font for smaller avatar
       }}
     >
       {firstLetter}
@@ -51,6 +50,7 @@ const ChatBox = ({ roomId, username }) => {
   const [messageInput, setMessageInput] = useState("");
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
 
   useEffect(() => {
     console.log(`🔹 ChatBox Loaded - Username: ${username}, Room ID: ${roomId}`);
@@ -67,14 +67,35 @@ const ChatBox = ({ roomId, username }) => {
 
       socketRef.current.on("CHAT_HISTORY", (history) => {
         console.log("📜 Loading chat history:", history);
-        setMessages(history);
+        // Make sure system messages are properly identified in history
+        const processedHistory = history.map(msg => ({
+          ...msg,
+          isSystemMessage: msg.username === "System"
+        }));
+        setMessages(processedHistory);
       });
 
       socketRef.current.on("RECEIVE_MESSAGE", (data) => {
         console.log("📩 New message received:", data);
-        setMessages((prev) => [...prev, data]);
+        
+        // Explicitly check and set isSystemMessage flag
+        const isSystem = data.username === "System";
+        console.log(`Is this a system message? ${isSystem ? "Yes" : "No"}`);
+        
+        setMessages((prev) => {
+          const newMessage = {
+            username: data.username,
+            message: data.message,
+            timestamp: data.timestamp,
+            isSystemMessage: isSystem
+          };
+          
+          const newMessages = [...prev, newMessage];
+          console.log("📜 Updated messages array:", newMessages);
+          return newMessages;
+        });
       });
-
+      
       socketRef.current.on("connect_error", (error) => {
         console.error("❌ Connection error:", error);
       });
@@ -89,9 +110,20 @@ const ChatBox = ({ roomId, username }) => {
     };
   }, [roomId, username]);
 
+  // Ensure the chat scrolls to the bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Fix for potential white line - ensure container has proper styling
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      // Ensure no margins or borders that could cause white lines
+      document.body.style.margin = '0';
+      document.body.style.padding = '0';
+      document.body.style.backgroundColor = '#1c1e29';
+    }
+  }, []);
 
   const sendMessage = (e) => {
     e.preventDefault();
@@ -111,20 +143,36 @@ const ChatBox = ({ roomId, username }) => {
   };
 
   return (
-    <div className="chatbox-container">
+    <div className="chatbox-container" ref={chatContainerRef}>
       <div className="messages-container">
-        {messages.map((msg, index) => (
-          <div key={index} className={`message-item ${msg.username === username ? "sent" : "received"}`}>
-            <div className="message-header">
-              <div className="user-info">
-                <LetterAvatar username={msg.username} />
-                <span className="username">{msg.username}</span>
-              </div>
-              <span className="timestamp">{msg.timestamp}</span>
+        {messages.map((msg, index) => {
+          console.log(`Rendering message ${index}:`, msg);
+          return (
+            <div key={index} 
+                className={`message-item ${msg.isSystemMessage ? "system-message-wrapper" : (msg.username === username ? "sent" : "received")}`}>
+              
+              {/* System Message Display */}
+              {msg.isSystemMessage ? (
+                <div className="system-message">
+                  <span className="system-text">{msg.message}</span>
+                  <span className="timestamp">{msg.timestamp}</span>
+                </div>
+              ) : (
+                // Normal User Messages
+                <>
+                  <div className="message-header">
+                    <div className="user-info">
+                      <LetterAvatar username={msg.username} />
+                      <span className="username">{msg.username}</span>
+                    </div>
+                    <span className="timestamp">{msg.timestamp}</span>
+                  </div>
+                  <div className="message-content">{msg.message}</div>
+                </>
+              )}
             </div>
-            <div className="message-content">{msg.message}</div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 

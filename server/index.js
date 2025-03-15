@@ -246,265 +246,342 @@ class Program {
   }
 };
 
-// Enable CORS
-app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:3000",
-  methods: ["GET", "POST"],
-  credentials: true
-}));
-
+app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: "*",
     methods: ["GET", "POST"],
-    credentials: true
-  }
+  },
 });
 
+// Map to store room data
+const roomsMap = new Map();
+const userChatStates = new Map();
+
+// Store chat messages for each room
+const chatHistories = new Map();
 const userSocketMap = new Map();
-const roomHistory = new Map();
-const roomChatHistory = new Map(); // Store chat history per room
-const activeRooms = new Map(); // Track active users in each room
-const userSessions = new Map(); // Track user sessions per room
-// Add debug logging for user tracking
-const logRoomUsers = (roomId) => {
-  const users = getAllConnectedClients(roomId);
-  console.log(`Current users in room ${roomId}:`, users.map(u => `${u.username} (${u.socketId})`));
-};
-
-const getAllConnectedClients = (roomId) => {
-  const room = io.sockets.adapter.rooms.get(roomId);
-  if (!room) return [];
-  
-  return Array.from(room)
-    .filter(socketId => userSocketMap.has(socketId)) // Only return users that are properly mapped
-    .map(socketId => ({
-      socketId,
-      username: userSocketMap.get(socketId)
-    }));
-};
-
-
+const activeRooms = new Map();
+// Track connected users in chat
+const connectedUsers = new Map();
+// Track connected users in chat by room
+const chatUsers = new Map();
 
 io.on("connection", (socket) => {
-  console.log(`🟢 New client connected: ${socket.id}`);
-
-  socket.on("JOIN_CHAT", ({ roomId, username }) => {
-    if (!username) {
-      console.log(`⚠️ Rejected join attempt without username for socket ${socket.id}`);
-      return;
-    }
-
- // Check for existing socket with same username in the room
- const previousSocket = findSocketByUsername(roomId, username);
- if (previousSocket) {
-   // Remove old socket from room and maps
-   handleUserLeaving(io.sockets.sockets.get(previousSocket), roomId);
-   io.sockets.sockets.get(previousSocket)?.disconnect(true);
- }
-
-    userSocketMap.set(socket.id, username); // Set username immediately
-    socket.join(roomId);
-    console.log(`👥 ${username} joined room: ${roomId}`);
-   
-
-   // Initialize room chat history if it doesn't exist
-   if (!roomChatHistory.has(roomId)) {
-    roomChatHistory.set(roomId, []);
-  }
-
-    // Track active users in the room
-    if (!activeRooms.has(roomId)) {
-      activeRooms.set(roomId, new Set());
-    }
-    activeRooms.get(roomId).add(socket.id);
-
-    // Send existing chat history to the new user
-    socket.emit("CHAT_HISTORY", roomChatHistory.get(roomId));
-  });
-
   socket.on(ACTIONS.JOIN, ({ roomId, username }) => {
-    if (!username) {
-      console.log(`⚠️ Rejected join action without username for socket ${socket.id}`);
-      return;
-    }
-
-    userSocketMap.set(socket.id, username);
     socket.join(roomId);
-    console.log(`📌 ${username} joined room: ${roomId}`);
-    logRoomUsers(roomId);
-
-    if (!roomHistory.has(roomId)) {
-      roomHistory.set(roomId, { code: "" });
-    }
-
-    const clients = getAllConnectedClients(roomId);
-
-    clients.forEach(({ socketId }) => {
-      io.to(socketId).emit(ACTIONS.JOINED, {
-        clients,
-        username,
-        socketId: socket.id,
-        history: roomHistory.get(roomId)
+    
+    // Initialize room if it doesn't exist
+    if (!roomsMap.has(roomId)) {
+      roomsMap.set(roomId, {
+        clients: [],
+        code: "",
+        language: "python3"
       });
-    });
-  });
-  // Handle message sending
-  socket.on(ACTIONS.SEND_MESSAGE, ({ roomId, message, username }) => {
-    console.log(`📩 ${username} sent message: "${message}" in room: ${roomId}`);
-
-    const chatMessage = { username, message, timestamp: new Date() };
-   
-
-    io.in(roomId).emit(ACTIONS.RECEIVE_MESSAGE, chatMessage);
-  });
-
-  socket.on("SEND_MESSAGE", (data) => {
-    const { roomId, username, message } = data;
-    if (!username || !userSocketMap.has(socket.id)) {
-      console.log(`⚠️ Rejected message from unregistered user: ${socket.id}`);
-      return;
     }
-    const now = new Date();
-    const formattedTime = now.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit'
-    });
-
-    const chatMessage = {
+    
+    const room = roomsMap.get(roomId);
+    
+    // Check if username already exists in the room
+    const existingClient = room.clients.find(c => c.username === username);
+    if (existingClient) {
+      // Remove the existing client with the same username
+      room.clients = room.clients.filter(c => c.username !== username);
+    }
+    
+    // First user in the room becomes both host and admin according to role system
+    const isFirstUser = room.clients.length === 0;
+    
+    // Create new client with appropriate role
+    const newClient = {
+      socketId: socket.id,
       username,
-      message,
-      timestamp: formattedTime,
-      id: Date.now() // Add unique ID for each message
+      role: isFirstUser ? 'admin' : 'viewer', // First user is admin, others start as viewers
+      isHost: isFirstUser // First user is host
     };
-
-    // Add message to room's chat history
-    if (roomChatHistory.has(roomId)) {
-      roomChatHistory.get(roomId).push(chatMessage);
-    }
-
-    // Broadcast to all users in the room (including sender)
-    io.in(roomId).emit("RECEIVE_MESSAGE", chatMessage);
+    
+    // Add client to room
+    room.clients.push(newClient);
+    
+    // Get all clients in the room
+    const clients = room.clients;
+    
+    // Emit joined event to all clients with first user status
+    io.to(roomId).emit(ACTIONS.JOINED, {
+      clients,
+      username,
+      socketId: socket.id,
+      isFirstUser
+    });
+    
+    // Send current code and language to new user
+    socket.emit(ACTIONS.CODE_CHANGE, { code: room.code });
+    socket.emit(ACTIONS.LANGUAGE_CHANGE, { language: room.language });
+    const timestamp = new Date().toLocaleTimeString();
+    const systemMessage = {
+      username: "System",
+      message: `${username} joined the room.`,
+      timestamp: new Date().toLocaleTimeString(),
+  };
+  console.log("🔹 Sending system message:", systemMessage);
+  io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+  
   });
 
+  // Handle chat message joining
+  socket.on("JOIN_CHAT", ({ roomId, username }) => {
+    if (!username) return;
+    socket.join(roomId);
+    userSocketMap.set(socket.id, username);
+
+    if (!chatHistories.has(roomId)) {
+      chatHistories.set(roomId, []);
+    }
+    socket.emit("CHAT_HISTORY", chatHistories.get(roomId));
+  });
+
+  // Handle user leaving chat
   socket.on("LEAVE_CHAT", ({ roomId, username }) => {
-    if (!username || !userSocketMap.has(socket.id)) {
-      console.log(`⚠️ Rejected leave request from unregistered user: ${socket.id}`);
-      return;
-    }
-
-    handleUserLeaving(socket, roomId);
-    // socket.to(roomId).emit("USER_LEFT", {
-    //   username,
-    //   socketId: socket.id
-    // });
+    if (!username) return;
+    socket.leave(roomId);
+    console.log(`${username} left chat in room: ${roomId}`);
   });
+
+  // Handle disconnection
+  socket.on("disconnect", () => {
+    // Find all users connected through this socket
+    for (const [userKey, socketId] of connectedUsers.entries()) {
+      if (socketId === socket.id) {
+        const [roomId, username] = userKey.split(":");
+        
+        // Check if this was just a UI toggle or an actual disconnection
+        const userState = userChatStates.get(userKey);
+        if (userState && !userState.uiOpen) {
+          // This was likely a page refresh or socket reconnect, not a user leaving
+          connectedUsers.delete(userKey);
+          userChatStates.delete(userKey);
+          
+          const leaveMessage = {
+            username: 'System',
+            message: `${username} left the chat`,
+            timestamp: new Date().toLocaleTimeString()
+          };
+  
+          if (chatHistories.has(roomId)) {
+            chatHistories.get(roomId).push(leaveMessage);
+            io.to(roomId).emit("RECEIVE_MESSAGE", leaveMessage);
+          }
+        }
+      }
+    }
+  });
+  socket.on("TOGGLE_CHAT_UI", ({ roomId, username, isOpen }) => {
+    if (roomId && username) {
+      const userKey = `${roomId}:${username}`;
+      
+      if (userChatStates.has(userKey)) {
+        const userState = userChatStates.get(userKey);
+        userState.uiOpen = isOpen;
+        userChatStates.set(userKey, userState);
+      }
+      
+      // Always ensure chat history is synced when opening
+      if (isOpen && chatHistories.has(roomId)) {
+        socket.emit("CHAT_HISTORY", chatHistories.get(roomId));
+      }
+    }
+  });
+  // Improved Chat Message Handling
+  socket.on("SEND_MESSAGE", ({ roomId, username, message }) => {
+    if (!username) return;
+    const timestamp = new Date().toLocaleTimeString();
+    const chatMessage = { username, message, timestamp };
+    chatHistories.get(roomId).push(chatMessage);
+    io.to(roomId).emit("RECEIVE_MESSAGE", chatMessage);
+  });
+
+  // Ensure consistent message handling between ACTIONS.SEND_MESSAGE and SEND_MESSAGE
 
   socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code }) => {
-    if (!roomHistory.has(roomId)) return;
-    roomHistory.get(roomId).code = code;
-    socket.to(roomId).emit(ACTIONS.CODE_CHANGE, { code }); // Broadcast only to room
-  });
-
-  socket.on(ACTIONS.SYNC_CODE, ({ socketId, code }) => {
-    io.to(socketId).emit(ACTIONS.CODE_CHANGE, { code });
-  });
-
-   // Handle disconnection
-   socket.on("disconnect", () => {
-    const userRoomId = findUserRoom(socket.id);
-    if (userRoomId) {
-      const username = userSocketMap.get(socket.id);
-      handleUserLeaving(socket, userRoomId);
-      
-      // Notify others about user disconnection
-      socket.to(userRoomId).emit("USER_LEFT", {
-        username,
-        socketId: socket.id
-      });
+    const room = roomsMap.get(roomId);
+    if (room) {
+      const client = room.clients.find(c => c.socketId === socket.id);
+      if (client && (client.role === 'admin' || client.isHost)) {
+        room.code = code;
+        io.to(roomId).emit(ACTIONS.CODE_CHANGE, { code });
+      }
     }
-    userSocketMap.delete(socket.id);
-    console.log(`🔴 Client disconnected: ${socket.id}`);
+  });
+
+  socket.on(ACTIONS.LANGUAGE_CHANGE, ({ roomId, language }) => {
+    const room = roomsMap.get(roomId);
+    if (room) {
+      const client = room.clients.find(c => c.socketId === socket.id);
+      if (client && client.isHost) {
+        room.language = language;
+        io.to(roomId).emit(ACTIONS.LANGUAGE_CHANGE, { language });
+        const timestamp = new Date().toLocaleTimeString();
+        const systemMessage = {
+          username: "System",
+          message: `${username} joined the room.`,
+          timestamp: new Date().toLocaleTimeString(),
+      };
+      console.log("🔹 Sending system message:", systemMessage);
+      io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+      
+      } else {
+        socket.emit('error', { message: "Only the host can change the language" });
+      }
+    }
+  });
+
+  socket.on(ACTIONS.CHANGE_ROLE, ({ roomId, targetSocketId, newRole,username }) => {
+    const room = roomsMap.get(roomId);
+    if (!room) return;
+
+    const targetClient = room.clients.find(c => c.socketId === targetSocketId);
+    const requestingClient = room.clients.find(c => c.socketId === socket.id);
+
+    if (!targetClient || !requestingClient) return;
+
+    if (targetClient.isHost) {
+      socket.emit('error', { message: "Host's role cannot be changed" });
+      return;
+    }
+
+    if (!requestingClient.isHost && requestingClient.role !== 'admin') {
+      socket.emit('error', { message: "You don't have permission to change roles" });
+      return;
+    }
+
+    if (!requestingClient.isHost && targetClient.role === 'admin') {
+      socket.emit('error', { message: "Only the host can change roles of admins" });
+      return;
+    }
+
+    targetClient.role = newRole;
+    io.to(roomId).emit(ACTIONS.ROLE_CHANGED, {
+      clients: room.clients,
+      changedUserId: targetSocketId,
+      username,
+      newRole
+  });
+  const timestamp = new Date().toLocaleTimeString();
+  const systemMessage = {
+    username: "System",
+    message: `${username} joined the room.`,
+    timestamp: new Date().toLocaleTimeString(),
+};
+console.log("🔹 Sending system message:", systemMessage);
+io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+
+    if (chatUsers.has(roomId)) {
+      const roomChatUsers = chatUsers.get(roomId);
+
+      for (const [sid, user] of roomChatUsers.entries()) {
+        if (user.username === targetClient.username) {
+          user.role = newRole;
+          roomChatUsers.set(sid, user);
+        }
+      }
+
+      const activeUsers = Array.from(roomChatUsers.values()).map(user => ({
+        username: user.username,
+        role: user.role,
+        isHost: user.isHost
+      }));
+
+      io.to(roomId).emit("ACTIVE_USERS", activeUsers);
+    }
+
+    io.to(roomId).emit(ACTIONS.ROLE_CHANGED, {
+      clients: room.clients,
+      changedUserId: targetSocketId,
+      username: targetClient.username
+    });
+  });
+
+  socket.on('disconnect', () => {
+    for (const [roomId, room] of roomsMap.entries()) {
+      const disconnectedClient = room.clients.find(c => c.socketId === socket.id);
+      if (disconnectedClient) {
+        room.clients = room.clients.filter(c => c.socketId !== socket.id);
+        io.to(roomId).emit(ACTIONS.DISCONNECTED, {
+          clients: room.clients,
+          username: disconnectedClient.username,
+      });
+        // **Send system message to chat**
+        const timestamp = new Date().toLocaleTimeString();
+        const systemMessage = {
+          username: "System",
+          message: `${username} joined the room.`,
+          timestamp: new Date().toLocaleTimeString(),
+      };
+      console.log("🔹 Sending system message:", systemMessage);
+      io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+      
+
+
+        if (disconnectedClient.isHost && room.clients.length > 0) {
+          const nextHost = room.clients.find(c => c.role === 'admin') || room.clients[0];
+          if (nextHost) {
+            nextHost.isHost = true;
+            nextHost.role = 'admin';
+
+            io.to(roomId).emit("HOST_CHANGED", {
+              previousHost: disconnectedClient.username,
+              newHost: nextHost.username
+            });
+            
+            const systemMessage = {
+              username: "System",
+              message: `${username} joined the room.`,
+              timestamp: new Date().toLocaleTimeString(),
+          };
+          console.log("🔹 Sending system message:", systemMessage);
+          io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+          
+          }
+        }
+      }
+    }
   });
 });
-// Helper function to find socket by username in a room
-function findSocketByUsername(roomId, username) {
-  const clients = getAllConnectedClients(roomId);
-  const existingClient = clients.find(client => client.username === username);
-  return existingClient ? existingClient.socketId : null;
-}
-
-// Helper function to find user's room
-function findUserRoom(socketId) {
-  for (const [roomId, users] of activeRooms.entries()) {
-    if (users.has(socketId)) {
-      return roomId;
-    }
-  }
-  return null;
-}
-
-function handleUserLeaving(socket, roomId) {
-  if (!socket) return;
-  
-  const username = userSocketMap.get(socket.id);
-  socket.leave(roomId);
-  
-  if (activeRooms.has(roomId)) {
-    activeRooms.get(roomId).delete(socket.id);
-
-    // Only clear room history if it's the last user
-    if (activeRooms.get(roomId).size === 0) {
-      console.log(`🧹 Clearing history for empty room: ${roomId}`);
-      roomChatHistory.delete(roomId);
-      activeRooms.delete(roomId);
-    }
-  }
-}
-
-
 
 const preprocessCode = (code, language) => {
   const config = languageConfig[language];
   if (!config) throw new Error(`Unsupported language: ${language}`);
-  
-  // Remove any BOM or hidden characters
+
   code = code.replace(/^\uFEFF/, '');
-  
-  // Trim whitespace but preserve newlines
+
   code = code.replace(/^\s+|\s+$/g, '');
-  
-  // Handle specific language preprocessing
+
   return config.template(code);
 };
 
 const sanitizeOutput = (output) => {
   if (!output) return '';
-  
-  // Convert undefined or null to empty string
+
   let sanitized = output.toString();
-  
-  // Trim any whitespace
+
   sanitized = sanitized.trim();
-  
-  // Remove literal \n and replace with actual newlines
+
   sanitized = sanitized.replace(/\\n/g, '\n');
-  
-  // Remove any surrounding quotes (both single and double)
+
   if ((sanitized.startsWith('"') && sanitized.endsWith('"')) || 
       (sanitized.startsWith("'") && sanitized.endsWith("'"))) {
     sanitized = sanitized.slice(1, -1);
   }
-  
+
   return sanitized;
 };
 
 app.post("/compile", async (req, res) => {
   try {
     const { code, language, stdin } = req.body;
-    
+
     if (!code || !language) {
       return res.status(400).json({ 
         error: "Missing required parameters: code and language" 
@@ -519,8 +596,7 @@ app.post("/compile", async (req, res) => {
     }
 
     const processedCode = preprocessCode(code, language);
-    
-    // Determine the main class name for Java
+
     let fileName = `main.${config.extension}`;
     if (language === 'java') {
       const classMatch = processedCode.match(/public\s+class\s+(\w+)/);
@@ -528,7 +604,7 @@ app.post("/compile", async (req, res) => {
         fileName = `${classMatch[1]}.java`;
       }
     }
-    
+
     const payload = {
       language: config.engine,
       version: config.version,
@@ -547,11 +623,11 @@ app.post("/compile", async (req, res) => {
     console.log("Piston response:", response.data);
 
     let output = '';
-    
+
     if (response.data.run.stdout) {
       output += response.data.run.stdout;
     }
-    
+
     if (response.data.run.stderr) {
       output += output ? `\nError:\n${response.data.run.stderr}` : response.data.run.stderr;
     }
@@ -567,7 +643,6 @@ app.post("/compile", async (req, res) => {
   }
 });
 
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -576,4 +651,4 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Listening on port ${PORT}`));

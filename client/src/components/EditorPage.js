@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Client from "./Client";
 import Editor from "./Editor";
 import ChatSection from "./ChatBotSection";
 import InputModal from "./InputModel";
-import { initSocket } from "../Socket";
-import { ACTIONS } from "../Actions";
+import io from "socket.io-client";
+import ACTIONS from "../Actions";
 import ChatBox from "./Chat";
 import {
   useNavigate,
@@ -36,41 +36,315 @@ const LANGUAGES = [
 ];
 
 function EditorPage() {
-  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
-
+  const location = useLocation();
+  const socketRef = useRef(null);
+  const { roomId } = useParams();
+  const reactNavigator = useNavigate();
   const [clients, setClients] = useState([]);
-  const [output, setOutput] = useState("");
-  const [isCompileWindowOpen, setIsCompileWindowOpen] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState('viewer');
+  const [isHost, setIsHost] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('python3');
   const [isCompiling, setIsCompiling] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState("python3");
-  const [isChatOpen, setIsChatOpen] = useState(false);
-
-  // State for the Input Modal
+  const [isCompileWindowOpen, setIsCompileWindowOpen] = useState(false);
+  const [output, setOutput] = useState('');
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
   const [tempCode, setTempCode] = useState(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [messageInput, setMessageInput] = useState('');
 
   const codeRef = useRef(null);
-  const socketRef = useRef(null);
-
-  const location = useLocation();
   const navigate = useNavigate();
-  const { roomId } = useParams();
 
-  // Helper: Check if the code likely requires input
-  const codeNeedsInput = (code) => {
-    if (!code) return false;
-    switch (selectedLanguage) {
-      case "python3":
-        return code.includes("input(");
-      case "c":
-      case "cpp":
-        return code.includes("scanf(") || code.includes("cin >>");
-      case "java":
-        return code.includes("Scanner") || code.includes("BufferedReader");
-      default:
-        return false;
+  useEffect(() => {
+    const init = async () => {
+      if (!location.state?.username) {
+        reactNavigator('/');
+        return;
+      }
+
+      socketRef.current = await io(process.env.REACT_APP_BACKEND_URL || "http://localhost:5000");
+
+      function handleErrors(e) {
+        console.log('socket error', e);
+        toast.error('Socket connection failed, try again later.');
+        reactNavigator('/');
+      }
+
+      socketRef.current.on('connect_error', (err) => handleErrors(err));
+      socketRef.current.on('connect_failed', (err) => handleErrors(err));
+
+      socketRef.current.emit(ACTIONS.JOIN, {
+        roomId,
+        username: location.state?.username,
+      });
+
+      // Listening for joined event
+      socketRef.current.on(ACTIONS.JOINED, ({ clients, username, socketId, isFirstUser }) => {
+        // Update clients list
+        setClients(clients);
+        
+        // Find the current client by socket ID
+        const currentClient = clients.find(client => client.socketId === socketRef.current.id);
+        if (currentClient) {
+          // Set current user's role and host status based on client data
+          setCurrentUserRole(currentClient.role);
+          setIsHost(currentClient.isHost);
+
+          // Show appropriate welcome message based on role system
+          if (username === location.state?.username) {
+            if (isFirstUser) {
+              // First user is both host and admin
+              setCurrentUserRole('admin');
+              setIsHost(true);
+              toast.success('Welcome! You are the host of this room.');
+            } else if (currentClient.role === 'admin') {
+              // Non-host admin
+              toast.success('You are an admin now.');
+            } else {
+              // Viewer
+              toast.success('You are a viewer. You can view');
+            }
+          } else {
+            toast.success(`${username} joined the room.`);
+            // Add system message for user joining
+             // Add system message for user joining
+      const timestamp = new Date().toLocaleTimeString();
+      const joinMessage = `${username} joined the room as ${currentClient.role}`;
+      
+      // Add directly to messages array for immediate display
+      setMessages(prev => [...prev, {
+        username: 'System',
+        message: joinMessage,
+        timestamp,
+        isSystemMessage: true
+      }]);
+          }
+        }
+      });
+
+      // Listen for chat messages
+      socketRef.current.on("RECEIVE_MESSAGE", (data) => {
+    console.log("📩 Received message:", data);
+
+    setMessages(prev => {
+        const newMessages = [...prev, {
+            username: data.username,
+            message: data.message,
+            timestamp: data.timestamp,
+            isSystemMessage: data.username === "System"
+        }];
+        console.log("📜 Updated messages array:", newMessages);
+        return newMessages;
+    });
+});
+
+   
+
+      // Listening for disconnected
+      socketRef.current.on(ACTIONS.DISCONNECTED, ({ socketId, username, clients }) => {
+        toast.success(`${username} left the room.`);
+        setClients(clients || []);
+        
+        // Add system message for user leaving
+        const timestamp = new Date().toLocaleTimeString();
+        
+        // Add directly to messages array
+        setMessages(prev => [...prev, {
+          username: 'System',
+          message: `${username} left the room`,
+          timestamp,
+          isSystemMessage: true
+        }]);
+        
+        // Update current user's role if they became host after previous host disconnected
+        const currentClient = clients?.find(client => client.socketId === socketRef.current.id);
+        if (currentClient) {
+          setCurrentUserRole(currentClient.role);
+          setIsHost(currentClient.isHost);
+          
+          // If current user became host
+          if (currentClient.isHost) {
+            // New host is automatically admin according to role system
+            toast.success('You are now the host of this room.');
+            
+            // System message for new host
+            setMessages(prev => [...prev, {
+              username: 'System',
+              message: `${location.state?.username} is now the host of this room`,
+              timestamp: new Date().toLocaleTimeString(),
+              isSystemMessage: true
+            }]);
+          }
+        }
+      });
+
+      // Listen for role changes
+      socketRef.current.on(ACTIONS.ROLE_CHANGED, ({ clients, changedUserId, username, newRole }) => {
+        setClients(clients);
+        
+        // Update current user's role if it was changed
+        const currentClient = clients.find(client => client.socketId === socketRef.current.id);
+        const changedUser = clients.find(client => client.socketId === changedUserId);
+        
+        if (currentClient) {
+          setCurrentUserRole(currentClient.role);
+          setIsHost(currentClient.isHost);
+          
+          // Show role change message only to the affected user
+          if (currentClient.socketId === changedUserId) {
+            if (currentClient.role === 'admin') {
+              toast.success('You are an admin now.');
+            } else {
+              toast.success('You are a viewer now. You can only view');
+            }
+          }
+        }
+        
+        // Add system message for role change
+        if (changedUser) {
+          const roleChangeMessage = `${changedUser.username}'s role changed to ${changedUser.role}`;
+          setMessages(prev => [...prev, {
+            username: 'System',
+            message: roleChangeMessage,
+            timestamp: new Date().toLocaleTimeString(),
+            isSystemMessage: true
+          }]);
+        }
+      });
+
+      // Listen for language changes
+      socketRef.current.on(ACTIONS.LANGUAGE_CHANGE, ({ language, username }) => {
+        if (language) {
+          setSelectedLanguage(language);
+          toast.success(`Programming language changed to ${language.charAt(0).toUpperCase() + language.slice(1)}`);
+          
+          // Add system message for language change
+          const timestamp = new Date().toLocaleTimeString();
+          const languageChangeMessage = username ? 
+            `${username} changed programming language to ${language}` : 
+            `Programming language changed to ${language}`;
+          
+          setMessages(prev => [...prev, {
+            username: 'System',
+            message: languageChangeMessage,
+            timestamp,
+            isSystemMessage: true
+          }]);
+        }
+      });
+
+      // Listen for errors
+      socketRef.current.on('error', ({ message }) => {
+        toast.error(message);
+      });
+
+      // Listen for code changes
+      socketRef.current.on(ACTIONS.CODE_CHANGE, ({ code }) => {
+        if (code !== null) {
+          setCode(code);
+        }
+      });
+
+      // Listen for sync code
+      socketRef.current.on(ACTIONS.SYNC_CODE, ({ code, socketId }) => {
+        if (socketId !== socketRef.current.id) {
+          setCode(code);
+        }
+      });
+
+      // Clean up on unmount
+      return () => {
+        // Clean up localStorage
+        localStorage.removeItem('username');
+        socketRef.current?.disconnect();
+        socketRef.current?.off(ACTIONS.JOINED);
+        socketRef.current?.off(ACTIONS.DISCONNECTED);
+        socketRef.current?.off(ACTIONS.ROLE_CHANGED);
+        socketRef.current?.off(ACTIONS.LANGUAGE_CHANGE);
+        socketRef.current?.off(ACTIONS.CODE_CHANGE);
+        socketRef.current?.off(ACTIONS.SYNC_CODE);
+        socketRef.current?.off(ACTIONS.RECEIVE_MESSAGE);
+        socketRef.current?.off('error');
+      };
+    };
+
+    init();
+  }, []);
+
+  const handleRoleChange = (socketId, newRole) => {
+    const targetClient = clients.find(c => c.socketId === socketId);
+    const currentClient = clients.find(c => c.socketId === socketRef.current.id);
+  
+    if (!currentClient || !targetClient) return;
+  
+    // Host can change any role except their own and other hosts
+    if (isHost && !targetClient.isHost) {
+      socketRef.current.emit(ACTIONS.CHANGE_ROLE, {
+        roomId,
+        targetSocketId: socketId,
+        newRole: newRole,
+        username: targetClient.username
+      });
+    }
+    // Admin can only promote viewers to admin
+    else if (currentUserRole === 'admin' && !currentClient.isHost && targetClient.role === 'viewer') {
+      socketRef.current.emit(ACTIONS.CHANGE_ROLE, {
+        roomId,
+        targetSocketId: socketId,
+        newRole: 'admin',
+        username: targetClient.username
+      });
+    } else {
+      toast.error('You do not have permission to make this role change');
     }
   };
+
+  const renderClient = (client) => {
+    return (
+      <Client
+        key={client.socketId}
+        username={client.username}
+        role={client.role}
+        isHost={client.isHost}
+        currentUserRole={currentUserRole}
+        isCurrentUserHost={isHost}
+        onRoleChange={(newRole) => handleRoleChange(client.socketId, newRole)}
+      />
+    );
+  };
+
+  const handleCodeChange = (newCode) => {
+    setCode(newCode);
+    if (currentUserRole === 'admin' || isHost) {
+      socketRef.current.emit(ACTIONS.CODE_CHANGE, {
+        roomId,
+        code: newCode,
+      });
+    }
+  };
+
+  const handleLanguageChange = (e) => {
+    // Only allow admins and hosts to change language
+    if (currentUserRole === 'admin' || isHost) {
+      const newLanguage = e.target.value;
+      setSelectedLanguage(newLanguage);
+      socketRef.current?.emit(ACTIONS.LANGUAGE_CHANGE, {
+        roomId,
+        language: newLanguage,
+        username: location.state?.username
+      });
+    } else {
+      toast.error("Only admins and hosts can change the language");
+    }
+  };
+
+  const canEdit = (client) => {
+    return client && (client.role === 'admin' || client.isHost);
+  };
+
   const languageToExtension = {
     python3: "py",
     java: "java",
@@ -89,20 +363,18 @@ function EditorPage() {
     rust: "rs",
     r: "r",
   };
-  
+
   const handleSaveFile = () => {
-    if (!codeRef.current) {
+    if (!code) {
       toast.error("No code to save!");
       return;
     }
 
-    
-  
     const fileName = prompt("Enter file name:", "code"); // Ask for filename
     if (!fileName) return; // Stop if user cancels
   
     const fileExtension = languageToExtension[selectedLanguage] || "txt"; // Get correct extension
-    const blob = new Blob([codeRef.current], { type: "text/plain" });
+    const blob = new Blob([code], { type: "text/plain" });
     const link = document.createElement("a");
   
     link.href = URL.createObjectURL(blob);
@@ -111,111 +383,56 @@ function EditorPage() {
     link.click();
     document.body.removeChild(link);
   };
-  
-  // Add this new function after your existing functions
-const handleFileImport = (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
 
-  // Check file extension matches selected language
-  const fileExtension = file.name.split('.').pop();
-  const expectedExtension = languageToExtension[selectedLanguage];
-  
-  if (fileExtension !== expectedExtension) {
-    toast.error(`Please select a ${expectedExtension} file for ${selectedLanguage}`);
-    return;
-  }
+  const handleFileImport = (event) => {
+    if (!canEdit(clients.find(c => c.socketId === socketRef.current.id))) {
+      toast.error('Only admins and host can import files');
+      event.target.value = '';
+      return;
+    }
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const content = e.target.result;
-    // Update the editor content
-    if (socketRef.current) {
-      socketRef.current.emit(ACTIONS.CODE_CHANGE, {
-        roomId,
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Check file extension matches selected language
+    const fileExtension = file.name.split('.').pop();
+    const expectedExtension = languageToExtension[selectedLanguage];
+    
+    if (fileExtension !== expectedExtension) {
+      toast.error(`Please select a ${expectedExtension} file for ${selectedLanguage}`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target.result;
+      // Update the editor content
+      if (socketRef.current) {
+        socketRef.current.emit(ACTIONS.CODE_CHANGE, {
+          roomId,
+          code: content,
+        });
+      }
+      setCode(content);
+     // Force editor update by emitting a SYNC_CODE event
+     if (socketRef.current) {
+      socketRef.current.emit(ACTIONS.SYNC_CODE, {
         code: content,
+        socketId: socketRef.current.id,
       });
     }
-    codeRef.current = content;
-   // Force editor update by emitting a SYNC_CODE event
-   if (socketRef.current) {
-    socketRef.current.emit(ACTIONS.SYNC_CODE, {
-      code: content,
-      socketId: socketRef.current.id,
-    });
-  }
-  
-  toast.success('File imported successfully');
-  
-  // Clear the file input for future imports
-  event.target.value = '';
-  };
-  reader.onerror = () => {
-    toast.error('Error reading file');
+    
+    toast.success('File imported successfully');
+    
+    // Clear the file input for future imports
     event.target.value = '';
+    };
+    reader.onerror = () => {
+      toast.error('Error reading file');
+      event.target.value = '';
+    };
+    reader.readAsText(file);
   };
-  reader.readAsText(file);
-};
-
-  useEffect(() => {
-    const init = async () => {
-      socketRef.current = await initSocket();
-
-      const handleErrors = (err) => {
-        console.log("Socket error:", err);
-        toast.error("Socket connection failed, try again later");
-        navigate("/");
-      };
-
-      socketRef.current.on("connect_error", handleErrors);
-      socketRef.current.on("connect_failed", handleErrors);
-
-      socketRef.current.emit(ACTIONS.JOIN, {
-        roomId,
-        username: location.state?.username,
-      });
-      socketRef.current.emit(ACTIONS.JOIN, {
-        roomId,
-        username: location.state?.username,
-      });
-      console.log(`User Joined - Username: ${location.state?.username}, Room ID: ${roomId}`);
-      
-
-      socketRef.current.on(
-        ACTIONS.JOINED,
-        ({ clients, username, socketId }) => {
-          if (username !== location.state?.username) {
-            toast.success(`${username} joined the room.`);
-          }
-          setClients(clients);
-          socketRef.current.emit(ACTIONS.SYNC_CODE, {
-            code: codeRef.current,
-            socketId,
-          });
-        }
-      );
-
-      socketRef.current.on(ACTIONS.DISCONNECTED, ({ socketId, username }) => {
-        toast.success(`${username} left the room`);
-        setClients((prev) =>
-          prev.filter((client) => client.socketId !== socketId)
-        );
-      });
-    };
-    init();
-
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current.off(ACTIONS.JOINED);
-        socketRef.current.off(ACTIONS.DISCONNECTED);
-      }
-    };
-  }, [location, navigate, roomId]);
-
-  if (!location.state) {
-    return <Navigate to="/" />;
-  }
 
   const copyRoomId = async () => {
     try {
@@ -231,16 +448,26 @@ const handleFileImport = (event) => {
     navigate("/");
   };
 
+  const codeNeedsInput = (code) => {
+    if (!code) return false;
+    switch (selectedLanguage) {
+      case "python3":
+        return code.includes("input(");
+      case "c":
+      case "cpp":
+        return code.includes("scanf(") || code.includes("cin >>");
+      case "java":
+        return code.includes("Scanner") || code.includes("BufferedReader");
+      default:
+        return false;
+    }
+  };
 
-
-
-
-  // Run code with the provided input
   const runCode = async (input) => {
     setIsCompiling(true);
     try {
       const response = await axios.post("http://localhost:5000/compile", {
-        code: codeRef.current,
+        code,
         language: selectedLanguage,
         stdin: input,
       });
@@ -254,10 +481,9 @@ const handleFileImport = (event) => {
     }
   };
 
-  // Trigger when the user clicks "Run Code"
   const handleRunClick = () => {
-    setTempCode(codeRef.current);
-    if (codeNeedsInput(codeRef.current)) {
+    setTempCode(code);
+    if (codeNeedsInput(code)) {
       setIsInputModalOpen(true);
     } else {
       runCode("");
@@ -271,7 +497,6 @@ const handleFileImport = (event) => {
   const toggleChat = () => {
     setIsChatOpen((prev) => !prev);
   };
-
   return (
     <div className="container-fluid vh-100 d-flex flex-column">
       <div className="row flex-grow-1">
@@ -281,25 +506,25 @@ const handleFileImport = (event) => {
             src="/images/logo3.jpeg"
             alt="Logo"
             className="img-fluid mx-auto"
-            style={{ maxWidth: "150px", marginTop: "20px",borderradius:"0px" }}
+            style={{ maxWidth: "150px", marginTop: "20px", borderradius: "0px" }}
           />
           <hr style={{ marginTop: "2rem" }} />
           <div className="d-flex flex-column flex-grow-1 overflow-auto">
             <span className="mb-2">Connected Users</span>
-            {clients.map((client) => (
-              <Client
-                key={client.socketId}
-                username={client.username}
-                currentUser={location.state.username}
-              />
-            ))}
+            {clients.map((client) => renderClient(client))}
           </div>
           <hr />
           <div className="mt-auto mb-3">
-            <button className="btn btn-success w-100 mb-2" onClick={copyRoomId}>
+            <button
+              className="btn btn-success w-100 mb-2"
+              onClick={copyRoomId}
+            >
               Copy Room ID
             </button>
-            <button className="btn btn-danger w-100" onClick={leaveRoom}>
+            <button
+              className="btn btn-danger w-100"
+              onClick={leaveRoom}
+            >
               Leave Room
             </button>
           </div>
@@ -309,10 +534,11 @@ const handleFileImport = (event) => {
         <div className="col-md-10 text-light d-flex flex-column">
           {/* Top Header (Language selector & nav) */}
           <div className="editor-header bg-dark p-2 d-flex justify-content-end">
-            <select
-              className="form-select w-auto"
+            <select 
               value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
+              onChange={handleLanguageChange}
+              disabled={!(currentUserRole === 'admin' || isHost)}
+              className="form-select w-auto"
             >
               {LANGUAGES.map((lang) => (
                 <option key={lang} value={lang}>
@@ -322,41 +548,41 @@ const handleFileImport = (event) => {
             </select>
           </div>
           {/* Editor Container */}
-          <div className="editor-container flex-grow-1 position-relative">
-            <Editor
-              socketRef={socketRef}
-              roomId={roomId}
-              onCodeChange={(code) => {
-                codeRef.current = code;
-              }}
-            />
+          <div className="editorWrap">
+            <div className="editor-section">
+              <Editor
+                socketRef={socketRef}
+                roomId={roomId}
+                onCodeChange={handleCodeChange}
+                isAdmin={currentUserRole === 'admin'}
+                isHost={isHost}
+                language={selectedLanguage}
+                code={code}
+              />
+            </div>
           </div>
         </div>
       </div>
-      
-        {/* ChangeLog Toggle Button */}
-        <button
-  className="btn btn-warning position-fixed changelog-button"
-  onClick={() => setIsChangelogOpen((prev) => !prev)}
->
-  {isChangelogOpen ? "Close Communication" : "Open Communication"}
-</button>
+      {/* ChangeLog Toggle Button */}
+      <button
+        className="btn btn-warning position-fixed changelog-button"
+        onClick={() => setIsChangelogOpen((prev) => !prev)}
+      >
+        {isChangelogOpen ? "Close Chat" : "Open Chat"}
+      </button>
       {/* ChangeLog Section */}
       {isChangelogOpen && (
-  <div
-    className="changelog-container bg-light text-dark p-3"
-  >
-     <ChatBox onClose={() => setIsChangelogOpen(false)} 
-      username={location.state?.username} 
-      roomId={roomId} 
-      />
-  </div>
-)}
-
-
+        <div
+          className="changelog-container bg-light text-dark"
+        >
+          <ChatBox onClose={() => setIsChangelogOpen(false)} 
+            username={location.state?.username} 
+            roomId={roomId} 
+          />
+        </div>
+      )}
       {/* Compiler Window Toggle Button */}
-
-      {!isCompileWindowOpen && (
+      {!isCompiling && (
         <button
           className="btn btn-primary btn-com position-fixed bottom-0 end-0 m-3"
           onClick={toggleCompileWindow}
@@ -365,34 +591,26 @@ const handleFileImport = (event) => {
           Open Compiler
         </button>
       )}
-
-        <button
+      <input
+        type="file"
+        id="file-import"
+        accept={`.${languageToExtension[selectedLanguage]}`}
+        onChange={handleFileImport}
+        style={{ display: 'none' }}
+      />
+      <button
+        className="import-file-btn"
+        onClick={() => document.getElementById('file-import').click()}
+        disabled={!canEdit(clients.find(c => c.socketId === socketRef.current.id))}
+      >
+        Import File
+      </button>
+      <button
         className="save-file-btn"
         onClick={handleSaveFile}
-        >
+      >
         Save File
-        </button>
-      <input
-  type="file"
-  id="file-import"
-  accept={`.${languageToExtension[selectedLanguage]}`}
-  onChange={handleFileImport}
-  style={{ display: 'none' }}
-/>
-<button
-  className="import-file-btn"
-  onClick={() => document.getElementById('file-import').click()}
->
-  Import File
-</button>
-       <button
-  className="save-file-btn"
-  onClick={handleSaveFile}
->
-  Save File
-</button>
-
-
+      </button>
       {/* Compiler Window */}
       <div
         className={`bg-dark text-light p-3 ${
@@ -431,7 +649,6 @@ const handleFileImport = (event) => {
           {output || "Output will appear here after compilation"}
         </pre>
       </div>
-
       {/* Chat Toggle Button */}
       <button
         className="btn btn-info position-fixed"
@@ -443,7 +660,7 @@ const handleFileImport = (event) => {
           zIndex: 1050,
         }}
       >
-        {isChatOpen ? "Close Chat" : "Open Chat"}
+        {isChatOpen ? "Close AI" : "AI Chat"}
       </button>
 
       {/* Chat Section */}
@@ -464,13 +681,8 @@ const handleFileImport = (event) => {
           <ChatSection onClose={toggleChat} />
         </div>
       )}
-    {/* <ChatComponent onClose={() => setIsChangelogOpen(false)} />  */}
-
       {/* Input Modal */}
-      <InputModal isOpen={isInputModalOpen} onClose={() => setIsInputModalOpen(false)} onSubmit={runCode} code={tempCode} language={selectedLanguage} />
-
-
-
+      <InputModal isOpen={isInputModalOpen} onClose={() => setIsInputModalOpen(false)} onSubmit={runCode} code={tempCode} language={selectedLanguage} />  
     </div>
   );
 }
