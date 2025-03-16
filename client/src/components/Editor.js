@@ -31,7 +31,7 @@ const LANGUAGE_MODES = {
   'r': { name: 'r' }
 };
 
-function Editor({ socketRef, roomId, onCodeChange, isAdmin, isHost, language, code }) {
+function Editor({ socketRef, roomId, onCodeChange, isAdmin, isHost, language, code ,username }) {
   const editorRef = useRef(null);
 
   // Initialize editor
@@ -69,24 +69,35 @@ function Editor({ socketRef, roomId, onCodeChange, isAdmin, isHost, language, co
         editorRef.current.setValue(code || '');
         editorRef.current.refresh();
 
-        editorRef.current.on("change", (instance, changes) => {
-          const { origin } = changes;
-          const newCode = instance.getValue();
-          
-          if (origin !== "setValue" && origin !== "remote") {
-            if (canEdit) {
-              onCodeChange(newCode);
-              socketRef.current?.emit(ACTIONS.CODE_CHANGE, {
-                roomId,
-                code: newCode,
-              });
-            } else {
-              // Don't allow viewers to make changes
-              instance.setValue(code || '');
-              toast.error("You are in view-only mode");
-            }
-          }
-        });
+        let typingTimeout = null;
+let lastCode = "";
+
+editorRef.current.on("change", (instance, changes) => {
+    const { origin } = changes;
+    const newCode = instance.getValue();
+
+    if (origin !== "setValue" && origin !== "remote") {
+        if (canEdit) {
+            onCodeChange(newCode);
+
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                if (newCode !== lastCode && Math.abs(newCode.length - lastCode.length) >= 10) {
+                    lastCode = newCode;
+                    socketRef.current?.emit(ACTIONS.CODE_CHANGE, {
+                        roomId,
+                        code: newCode,
+                        username: localStorage.getItem("username") || "Guest",
+                    });
+                }
+            }, 1000); // Only log changes after 1 second of inactivity
+        } else {
+            instance.setValue(code || '');
+            toast.error("You are in view-only mode");
+        }
+    }
+});
+
       }
     }
 

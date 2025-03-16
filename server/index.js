@@ -319,16 +319,29 @@ io.on("connection", (socket) => {
     // Send current code and language to new user
     socket.emit(ACTIONS.CODE_CHANGE, { code: room.code });
     socket.emit(ACTIONS.LANGUAGE_CHANGE, { language: room.language });
+    if (!username) {
+      console.error("Username is missing in JOIN event");
+      return;
+    }
+    
     const timestamp = new Date().toLocaleTimeString();
     const systemMessage = {
       username: "System",
-      message: `${username} joined the room.`,
-      timestamp: new Date().toLocaleTimeString(),
-  };
-  console.log("🔹 Sending system message:", systemMessage);
-  io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+      message: `Room settings were updated`,
+      timestamp,
+    };
+    console.log("🔹 Sending system message:", systemMessage);
+    io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);    
   
   });
+
+  socket.on("GET_HISTORY", ({ roomId }) => {
+    const room = roomsMap.get(roomId);
+    if (room && room.history) {
+        socket.emit("UPDATE_HISTORY", room.history);
+    }
+});
+
 
   // Handle chat message joining
   socket.on("JOIN_CHAT", ({ roomId, username }) => {
@@ -365,7 +378,7 @@ io.on("connection", (socket) => {
           
           const leaveMessage = {
             username: 'System',
-            message: `${username} left the chat`,
+            message: `${client.username} left the chat`,
             timestamp: new Date().toLocaleTimeString()
           };
   
@@ -404,16 +417,171 @@ io.on("connection", (socket) => {
 
   // Ensure consistent message handling between ACTIONS.SEND_MESSAGE and SEND_MESSAGE
 
-  socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code }) => {
-    const room = roomsMap.get(roomId);
-    if (room) {
-      const client = room.clients.find(c => c.socketId === socket.id);
-      if (client && (client.role === 'admin' || client.isHost)) {
-        room.code = code;
-        io.to(roomId).emit(ACTIONS.CODE_CHANGE, { code });
+ // Replace the existing CODE_CHANGE handler in index.js with this updated version
+ socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code, username }) => {
+  const room = roomsMap.get(roomId);
+  if (!room) return;
+  
+  const client = room.clients.find(c => c.socketId === socket.id);
+  if (!(client && (client.role === 'admin' || client.isHost))) return;
+  
+  // Get previous code to compare
+  const previousCode = room.code || "";
+  
+  // Don't process if code hasn't changed at all
+  if (previousCode === code) return;
+  
+  // Initialize history and tracking variables if needed
+  if (!room.history) room.history = [];
+  if (!room.lastLogTime) room.lastLogTime = 0;
+  if (!room.bufferedCode) room.bufferedCode = previousCode;
+  if (!room.currentEditor) room.currentEditor = username;
+  if (!room.pendingChanges) room.pendingChanges = false;
+  
+  const now = Date.now();
+  const timeSinceLastLog = now - room.lastLogTime;
+  
+  // Calculate difference without whitespace to detect actual content changes
+  const prevContent = previousCode.replace(/\s+/g, '');
+  const newContent = code.replace(/\s+/g, '');
+  const contentChanged = prevContent !== newContent;
+  
+  // Check if editor has changed - if so, log pending changes from previous editor
+  if (username !== room.currentEditor && room.pendingChanges) {
+    // Log the previous user's changes first
+    logCodeChange(roomId, room, previousCode, room.currentEditor);
+    room.bufferedCode = previousCode; // Update buffer to the state before current change
+  }
+  
+  // Update current editor
+  room.currentEditor = username;
+  
+  // Update room code immediately
+  room.code = code;
+  
+  // Track that we have pending changes
+  room.pendingChanges = true;
+  
+  // Check for "completion" indicators
+  const isCompletedEdit = (
+    // More than 8 seconds since last change
+    timeSinceLastLog >= 8000 || 
+    // Significant content change
+    (contentChanged && Math.abs(newContent.length - prevContent.length) >= 5)
+  );
+  
+  if (isCompletedEdit && room.pendingChanges) {
+    // Log the completed edit
+    logCodeChange(roomId, room, code, username);
+    room.pendingChanges = false;
+  } else {
+    // Set a timeout to log changes after inactivity
+    if (room.logTimeout) clearTimeout(room.logTimeout);
+    
+    room.logTimeout = setTimeout(() => {
+      // Only log if we still have pending changes from this user
+      if (room.pendingChanges && room.currentEditor === username) {
+        logCodeChange(roomId, room, room.code, username);
+        room.pendingChanges = false;
       }
+    }, 8000); // 8 second timeout
+  }
+  
+  // Always emit the latest code to all clients
+  io.to(roomId).emit(ACTIONS.CODE_CHANGE, { code });
+});
+
+// Extract logging logic to a separate function for clarity
+function logCodeChange(roomId, room, currentCode, editorUsername) {
+  const bufferedCode = room.bufferedCode || "";
+  
+  // Skip if nothing changed (this is a safety check)
+  if (bufferedCode === currentCode) return;
+  
+  // Calculate meaningful diff
+  const originalLines = bufferedCode.split('\n');
+  const currentLines = currentCode.split('\n');
+  
+  let addedLines = [];
+  let removedLines = [];
+  
+  // Find the actual content changes
+  const maxLines = Math.max(originalLines.length, currentLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    const originalLine = i < originalLines.length ? originalLines[i].trim() : null;
+    const currentLine = i < currentLines.length ? currentLines[i].trim() : null;
+    
+    // Skip logging empty lines or whitespace-only changes
+    if (originalLine === currentLine || 
+        (originalLine === '' && currentLine === null) || 
+        (originalLine === null && currentLine === '')) {
+      continue;
     }
-  });
+    
+    if (originalLine !== null && originalLine !== '') removedLines.push(`- ${originalLines[i]}`);
+    if (currentLine !== null && currentLine !== '') addedLines.push(`+ ${currentLines[i]}`);
+  }
+  
+  // Check if there are any meaningful changes
+  const hasAddedContent = addedLines.some(line => line.trim() !== '+ ');
+  const hasRemovedContent = removedLines.some(line => line.trim() !== '- ');
+  
+  if (hasAddedContent || hasRemovedContent) {
+    // Determine action type
+    let action = "edited the code";
+    if (addedLines.length > 0 && removedLines.length === 0) {
+      action = "added code";
+    } else if (addedLines.length === 0 && removedLines.length > 0) {
+      action = "removed code";
+    }
+    
+    // Build the change description
+    let changeDescription = '';
+    
+    // Keep diff compact
+    if (removedLines.length > 0) {
+      changeDescription += removedLines.join('\n');
+    }
+    
+    if (addedLines.length > 0) {
+      if (changeDescription) changeDescription += '\n';
+      changeDescription += addedLines.join('\n');
+    }
+    
+    // Limit change description length
+    if (changeDescription.length > 300) {
+      changeDescription = changeDescription.substring(0, 297) + '...';
+    }
+    
+    // Add to history
+    const timestamp = new Date().toLocaleTimeString();
+    room.history.push({
+      username: editorUsername || "Unknown User",
+      action: action,
+      timestamp,
+      changeDescription
+    });
+    
+    // Keep only the last 50 changes
+    if (room.history.length > 50) {
+      room.history.shift();
+    }
+    
+    // Emit updated history
+    io.to(roomId).emit("UPDATE_HISTORY", room.history.map(entry => ({
+      username: entry.username,
+      action: entry.action,
+      timestamp: entry.timestamp,
+      codeSnippet: entry.changeDescription
+    })));
+  }
+  
+  // Reset the buffer to current state
+  room.bufferedCode = currentCode;
+  room.lastLogTime = Date.now();
+}
+
+
 
   socket.on(ACTIONS.LANGUAGE_CHANGE, ({ roomId, language }) => {
     const room = roomsMap.get(roomId);
@@ -425,7 +593,7 @@ io.on("connection", (socket) => {
         const timestamp = new Date().toLocaleTimeString();
         const systemMessage = {
           username: "System",
-          message: `${username} joined the room.`,
+          message: `${client.username} joined the room.`,
           timestamp: new Date().toLocaleTimeString(),
       };
       console.log("🔹 Sending system message:", systemMessage);
@@ -471,7 +639,7 @@ io.on("connection", (socket) => {
   const timestamp = new Date().toLocaleTimeString();
   const systemMessage = {
     username: "System",
-    message: `${username} joined the room.`,
+    message: `${username}'s role was changed to ${newRole}.`,
     timestamp: new Date().toLocaleTimeString(),
 };
 console.log("🔹 Sending system message:", systemMessage);
@@ -516,7 +684,7 @@ io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
         const timestamp = new Date().toLocaleTimeString();
         const systemMessage = {
           username: "System",
-          message: `${username} joined the room.`,
+          message: `${disconnectedClient.username} left the room.`,
           timestamp: new Date().toLocaleTimeString(),
       };
       console.log("🔹 Sending system message:", systemMessage);
@@ -537,7 +705,7 @@ io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
             
             const systemMessage = {
               username: "System",
-              message: `${username} joined the room.`,
+              message: `${client.username} joined the room.`,
               timestamp: new Date().toLocaleTimeString(),
           };
           console.log("🔹 Sending system message:", systemMessage);

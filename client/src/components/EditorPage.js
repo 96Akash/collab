@@ -6,6 +6,7 @@ import InputModal from "./InputModel";
 import io from "socket.io-client";
 import ACTIONS from "../Actions";
 import ChatBox from "./Chat";
+import HistoryLog from "./HistoryLog";
 import {
   useNavigate,
   useLocation,
@@ -39,6 +40,7 @@ function EditorPage() {
   const location = useLocation();
   const socketRef = useRef(null);
   const { roomId } = useParams();
+  const [showHistory, setShowHistory] = useState(false); 
   const reactNavigator = useNavigate();
   const [clients, setClients] = useState([]);
   const [currentUserRole, setCurrentUserRole] = useState('viewer');
@@ -54,6 +56,7 @@ function EditorPage() {
   const [code, setCode] = useState('');
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
+  const [history, setHistory] = useState([]); 
 
   const codeRef = useRef(null);
   const navigate = useNavigate();
@@ -139,6 +142,10 @@ function EditorPage() {
         console.log("📜 Updated messages array:", newMessages);
         return newMessages;
     });
+});
+socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
+  console.log("📜 Received history log:", historyLog);
+  setHistory(historyLog);
 });
 
    
@@ -267,6 +274,7 @@ function EditorPage() {
         socketRef.current?.off(ACTIONS.CODE_CHANGE);
         socketRef.current?.off(ACTIONS.SYNC_CODE);
         socketRef.current?.off(ACTIONS.RECEIVE_MESSAGE);
+        socketRef.current.off("UPDATE_HISTORY")
         socketRef.current?.off('error');
       };
     };
@@ -322,6 +330,7 @@ function EditorPage() {
       socketRef.current.emit(ACTIONS.CODE_CHANGE, {
         roomId,
         code: newCode,
+        username: location.state?.username
       });
     }
   };
@@ -559,6 +568,7 @@ function EditorPage() {
                 language={selectedLanguage}
                 code={code}
               />
+              
             </div>
           </div>
         </div>
@@ -599,6 +609,7 @@ function EditorPage() {
         onChange={handleFileImport}
         style={{ display: 'none' }}
       />
+      
       <button
         className="import-file-btn"
         onClick={() => document.getElementById('file-import').click()}
@@ -606,6 +617,14 @@ function EditorPage() {
       >
         Import File
       </button>
+      <button 
+  className="history-toggle-btn" 
+  onClick={() => setShowHistory(!showHistory)}
+>
+  {showHistory ? "Hide History" : "View History"}
+</button>
+
+{showHistory && <HistoryLog history={history} />}
       <button
         className="save-file-btn"
         onClick={handleSaveFile}
