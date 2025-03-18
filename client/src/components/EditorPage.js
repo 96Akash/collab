@@ -85,7 +85,7 @@ function EditorPage() {
       });
 
       // Listening for joined event
-      socketRef.current.on(ACTIONS.JOINED, ({ clients, username, socketId, isFirstUser }) => {
+      socketRef.current.on(ACTIONS.JOINED, ({ clients, username, socketId, isFirstUser ,isReconnecting }) => {
         // Update clients list
         setClients(clients);
         
@@ -98,7 +98,13 @@ function EditorPage() {
 
           // Show appropriate welcome message based on role system
           if (username === location.state?.username) {
-            if (isFirstUser) {
+            if (isReconnecting) {
+              // Reconnecting user
+              toast.success('Reconnected to the room.');
+              if (currentClient.isHost) {
+                toast.success('You are still the host of this room.');
+              }
+            } else if (isFirstUser) {
               // First user is both host and admin
               setCurrentUserRole('admin');
               setIsHost(true);
@@ -108,14 +114,21 @@ function EditorPage() {
               toast.success('You are an admin now.');
             } else {
               // Viewer
-              toast.success('You are a viewer. You can view');
+              toast.success('You are a viewer. You can view the code.');
             }
           } else {
-            toast.success(`${username} joined the room.`);
+            // Another user joined
+            if (isReconnecting) {
+              toast.success(`${username} reconnected to the room.`);
+            } else {
+              toast.success(`${username} joined the room.`);
+            }
             // Add system message for user joining
              // Add system message for user joining
       const timestamp = new Date().toLocaleTimeString();
-      const joinMessage = `${username} joined the room as ${currentClient.role}`;
+      const joinMessage = isReconnecting 
+      ? `${username} reconnected to the room as ${currentClient.role}`
+      : `${username} joined the room as ${currentClient.role}`;
       
       // Add directly to messages array for immediate display
       setMessages(prev => [...prev, {
@@ -127,7 +140,39 @@ function EditorPage() {
           }
         }
       });
+      socketRef.current.on(ACTIONS.UPDATE_USERS, ({ clients }) => {
+        console.log("📢 Updating users list:", clients);
+        if (clients && Array.isArray(clients)) {
+          // Create a new array to ensure React detects the change
+          setClients(prevClients => {
+            console.log("Previous clients:", prevClients, "New clients:", clients);
+            return [...clients];
+          });
+        }
+      });
 
+    
+    socketRef.current.on("HOST_CHANGED", ({ previousHost, newHost,clients }) => {
+      console.log(`🎙 Host changed: ${previousHost} ➝ ${newHost}`);
+  
+      if (clients && Array.isArray(clients)) {
+        setClients([...clients]);
+      }
+      if (newHost === location.state?.username) {
+          toast.success('You are now the host of this room.');
+          setIsHost(true);
+          setCurrentUserRole('admin'); // Host should also be admin
+      }
+  
+      setMessages(prev => [...prev, {
+          username: 'System',
+          message: `${newHost} is now the host.`,
+          timestamp: new Date().toLocaleTimeString(),
+          isSystemMessage: true
+      }]);
+  });
+  
+      
       // Listen for chat messages
       socketRef.current.on("RECEIVE_MESSAGE", (data) => {
     console.log("📩 Received message:", data);
@@ -151,42 +196,27 @@ socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
    
 
       // Listening for disconnected
-      socketRef.current.on(ACTIONS.DISCONNECTED, ({ socketId, username, clients }) => {
-        toast.success(`${username} left the room.`);
-        setClients(clients || []);
+      socketRef.current.on(ACTIONS.DISCONNECTED, ({ username, clients }) => {
+        console.log(`❌ ${username} left the room. Received clients:`, clients);
         
-        // Add system message for user leaving
-        const timestamp = new Date().toLocaleTimeString();
-        
-        // Add directly to messages array
+        // Directly update clients state if we received an updated list
+        if (clients && Array.isArray(clients)) {
+          console.log("Updating clients state with:", clients);
+          setClients([...clients]); // Create a new array to ensure state update
+        }
+      
+        // Add system message
         setMessages(prev => [...prev, {
           username: 'System',
-          message: `${username} left the room`,
-          timestamp,
+          message: `${username} left the room.`,
+          timestamp: new Date().toLocaleTimeString(),
           isSystemMessage: true
         }]);
-        
-        // Update current user's role if they became host after previous host disconnected
-        const currentClient = clients?.find(client => client.socketId === socketRef.current.id);
-        if (currentClient) {
-          setCurrentUserRole(currentClient.role);
-          setIsHost(currentClient.isHost);
-          
-          // If current user became host
-          if (currentClient.isHost) {
-            // New host is automatically admin according to role system
-            toast.success('You are now the host of this room.');
-            
-            // System message for new host
-            setMessages(prev => [...prev, {
-              username: 'System',
-              message: `${location.state?.username} is now the host of this room`,
-              timestamp: new Date().toLocaleTimeString(),
-              isSystemMessage: true
-            }]);
-          }
-        }
       });
+    
+    
+    
+    
 
       // Listen for role changes
       socketRef.current.on(ACTIONS.ROLE_CHANGED, ({ clients, changedUserId, username, newRole }) => {
@@ -274,6 +304,7 @@ socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
         socketRef.current?.off(ACTIONS.CODE_CHANGE);
         socketRef.current?.off(ACTIONS.SYNC_CODE);
         socketRef.current?.off(ACTIONS.RECEIVE_MESSAGE);
+        socketRef.current.off(ACTIONS.UPDATE_USERS);
         socketRef.current.off("UPDATE_HISTORY")
         socketRef.current?.off('error');
       };
@@ -454,8 +485,19 @@ socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
   };
 
   const leaveRoom = () => {
-    navigate("/");
-  };
+    if (socketRef.current) {
+        socketRef.current.emit(ACTIONS.LEAVE_ROOM, {
+            roomId,
+            username: location.state?.username
+        });
+
+        // Delay navigation to allow the server to process the event
+        setTimeout(() => {
+            navigate("/");
+        }, 500);
+    }
+};
+
 
   const codeNeedsInput = (code) => {
     if (!code) return false;

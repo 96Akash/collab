@@ -273,67 +273,37 @@ io.on("connection", (socket) => {
   socket.on(ACTIONS.JOIN, ({ roomId, username }) => {
     socket.join(roomId);
     
-    // Initialize room if it doesn't exist
     if (!roomsMap.has(roomId)) {
-      roomsMap.set(roomId, {
-        clients: [],
-        code: "",
-        language: "python3"
-      });
+        roomsMap.set(roomId, { clients: [], code: "", language: "python3" });
     }
     
     const room = roomsMap.get(roomId);
     
-    // Check if username already exists in the room
-    const existingClient = room.clients.find(c => c.username === username);
-    if (existingClient) {
-      // Remove the existing client with the same username
-      room.clients = room.clients.filter(c => c.username !== username);
-    }
+    // Remove existing user instance before adding new one
+    room.clients = room.clients.filter(c => c.username !== username);
     
-    // First user in the room becomes both host and admin according to role system
+    // Determine roles
     const isFirstUser = room.clients.length === 0;
-    
-    // Create new client with appropriate role
     const newClient = {
-      socketId: socket.id,
-      username,
-      role: isFirstUser ? 'admin' : 'viewer', // First user is admin, others start as viewers
-      isHost: isFirstUser // First user is host
+        socketId: socket.id,
+        username,
+        role: isFirstUser ? 'admin' : 'viewer',
+        isHost: isFirstUser
     };
-    
-    // Add client to room
     room.clients.push(newClient);
     
-    // Get all clients in the room
-    const clients = room.clients;
-    
-    // Emit joined event to all clients with first user status
-    io.to(roomId).emit(ACTIONS.JOINED, {
-      clients,
-      username,
-      socketId: socket.id,
-      isFirstUser
-    });
-    
-    // Send current code and language to new user
-    socket.emit(ACTIONS.CODE_CHANGE, { code: room.code });
-    socket.emit(ACTIONS.LANGUAGE_CHANGE, { language: room.language });
-    if (!username) {
-      console.error("Username is missing in JOIN event");
-      return;
-    }
-    
+    // Send updated client list to all users
+    io.to(roomId).emit(ACTIONS.JOINED, { clients: room.clients, username, socketId: socket.id });
+
+    // Save join message in chat history
     const timestamp = new Date().toLocaleTimeString();
-    const systemMessage = {
-      username: "System",
-      message: `Room settings were updated`,
-      timestamp,
-    };
-    console.log("🔹 Sending system message:", systemMessage);
-    io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);    
-  
-  });
+    const joinMessage = { username: "System", message: `${username} joined the room.`, timestamp };
+
+    if (!chatHistories.has(roomId)) chatHistories.set(roomId, []);
+    chatHistories.get(roomId).push(joinMessage);
+    
+    io.to(roomId).emit("RECEIVE_MESSAGE", joinMessage);
+});
 
   socket.on("GET_HISTORY", ({ roomId }) => {
     const room = roomsMap.get(roomId);
@@ -341,7 +311,24 @@ io.on("connection", (socket) => {
         socket.emit("UPDATE_HISTORY", room.history);
     }
 });
-
+function broadcastUserList(roomId) {
+  const room = roomsMap.get(roomId);
+  if (!room) return;
+  
+  // Format the client list in a consistent way
+  const clientList = room.clients.map(client => ({
+    socketId: client.socketId,
+    username: client.username,
+    role: client.role,
+    isHost: client.isHost
+  }));
+  
+  // Broadcast to all users in the room
+  io.to(roomId).emit('USERS_UPDATE', {
+    clients: clientList,
+    roomId: roomId
+  });
+}
 
   // Handle chat message joining
   socket.on("JOIN_CHAT", ({ roomId, username }) => {
@@ -354,42 +341,90 @@ io.on("connection", (socket) => {
     }
     socket.emit("CHAT_HISTORY", chatHistories.get(roomId));
   });
+  socket.on(ACTIONS.LEAVE_ROOM, ({ roomId, username }) => {
+    if (!roomId || !username) return;
 
-  // Handle user leaving chat
-  socket.on("LEAVE_CHAT", ({ roomId, username }) => {
-    if (!username) return;
-    socket.leave(roomId);
-    console.log(`${username} left chat in room: ${roomId}`);
+    const room = roomsMap.get(roomId);
+    if (room) {
+        room.clients = room.clients.filter(c => c.username !== username);
+        io.to(roomId).emit(ACTIONS.DISCONNECTED, { username, clients: [...room.clients] });
+
+        // Save leave message in chat history
+        const timestamp = new Date().toLocaleTimeString();
+        const leaveMessage = { username: "System", message: `${username} left the room.`, timestamp };
+        
+        if (!chatHistories.has(roomId)) chatHistories.set(roomId, []);
+        chatHistories.get(roomId).push(leaveMessage);
+        
+        io.to(roomId).emit("RECEIVE_MESSAGE", leaveMessage);
+
+        // Assign new host if necessary
+        if (room.clients.length > 0) {
+            const nextHost = room.clients.find(c => c.role === 'admin') || room.clients[0];
+            if (nextHost) {
+                nextHost.isHost = true;
+                nextHost.role = 'admin';
+
+                const hostChangeMessage = { username: "System", message: `${nextHost.username} is now the host.`, timestamp };
+                chatHistories.get(roomId).push(hostChangeMessage);
+                
+                io.to(roomId).emit("HOST_CHANGED", { previousHost: username, newHost: nextHost.username });
+                io.to(roomId).emit("RECEIVE_MESSAGE", hostChangeMessage);
+            }
+        }
+
+        if (room.clients.length === 0) roomsMap.delete(roomId);
+    }
+});
+
+  socket.on(ACTIONS.REQUEST_UPDATE_USERS, ({ roomId }) => {
+    const room = roomsMap.get(roomId);
+    if (room) {
+      io.to(roomId).emit(ACTIONS.UPDATE_USERS, { 
+        clients: [...room.clients]
+      });
+    }
   });
+
 
   // Handle disconnection
   socket.on("disconnect", () => {
-    // Find all users connected through this socket
-    for (const [userKey, socketId] of connectedUsers.entries()) {
-      if (socketId === socket.id) {
-        const [roomId, username] = userKey.split(":");
-        
-        // Check if this was just a UI toggle or an actual disconnection
-        const userState = userChatStates.get(userKey);
-        if (userState && !userState.uiOpen) {
-          // This was likely a page refresh or socket reconnect, not a user leaving
-          connectedUsers.delete(userKey);
-          userChatStates.delete(userKey);
-          
-          const leaveMessage = {
-            username: 'System',
-            message: `${client.username} left the chat`,
-            timestamp: new Date().toLocaleTimeString()
-          };
-  
-          if (chatHistories.has(roomId)) {
-            chatHistories.get(roomId).push(leaveMessage);
-            io.to(roomId).emit("RECEIVE_MESSAGE", leaveMessage);
-          }
+    for (const [roomId, room] of roomsMap.entries()) {
+        const disconnectedClient = room.clients.find(c => c.socketId === socket.id);
+        if (disconnectedClient) {
+            const username = disconnectedClient.username;
+            room.clients = room.clients.filter(c => c.socketId !== socket.id);
+            io.to(roomId).emit(ACTIONS.DISCONNECTED, { username, clients: [...room.clients] });
+
+            // Save disconnect message in chat history
+            const timestamp = new Date().toLocaleTimeString();
+            const disconnectMessage = { username: "System", message: `${username} disconnected.`, timestamp };
+            
+            if (!chatHistories.has(roomId)) chatHistories.set(roomId, []);
+            chatHistories.get(roomId).push(disconnectMessage);
+            
+            io.to(roomId).emit("RECEIVE_MESSAGE", disconnectMessage);
+
+            // Handle host reassignment
+            if (disconnectedClient.isHost && room.clients.length > 0) {
+                const nextHost = room.clients.find(c => c.role === 'admin') || room.clients[0];
+                if (nextHost) {
+                    nextHost.isHost = true;
+                    nextHost.role = 'admin';
+
+                    const hostChangeMessage = { username: "System", message: `${nextHost.username} is now the host.`, timestamp };
+                    chatHistories.get(roomId).push(hostChangeMessage);
+                    
+                    io.to(roomId).emit("HOST_CHANGED", { previousHost: username, newHost: nextHost.username });
+                    io.to(roomId).emit("RECEIVE_MESSAGE", hostChangeMessage);
+                }
+            }
+
+            if (room.clients.length === 0) roomsMap.delete(roomId);
         }
-      }
     }
-  });
+});
+  
   socket.on("TOGGLE_CHAT_UI", ({ roomId, username, isOpen }) => {
     if (roomId && username) {
       const userKey = `${roomId}:${username}`;
@@ -583,93 +618,81 @@ function logCodeChange(roomId, room, currentCode, editorUsername) {
 
 
 
-  socket.on(ACTIONS.LANGUAGE_CHANGE, ({ roomId, language }) => {
-    const room = roomsMap.get(roomId);
-    if (room) {
-      const client = room.clients.find(c => c.socketId === socket.id);
-      if (client && client.isHost) {
-        room.language = language;
-        io.to(roomId).emit(ACTIONS.LANGUAGE_CHANGE, { language });
-        const timestamp = new Date().toLocaleTimeString();
-        const systemMessage = {
-          username: "System",
-          message: `${client.username} joined the room.`,
-          timestamp: new Date().toLocaleTimeString(),
-      };
-      console.log("🔹 Sending system message:", systemMessage);
-      io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
-      
-      } else {
-        socket.emit('error', { message: "Only the host can change the language" });
-      }
-    }
-  });
+socket.on(ACTIONS.LANGUAGE_CHANGE, ({ roomId, language, username }) => {
+  const room = roomsMap.get(roomId);
+  if (!room) return;
 
-  socket.on(ACTIONS.CHANGE_ROLE, ({ roomId, targetSocketId, newRole,username }) => {
-    const room = roomsMap.get(roomId);
-    if (!room) return;
-
-    const targetClient = room.clients.find(c => c.socketId === targetSocketId);
-    const requestingClient = room.clients.find(c => c.socketId === socket.id);
-
-    if (!targetClient || !requestingClient) return;
-
-    if (targetClient.isHost) {
-      socket.emit('error', { message: "Host's role cannot be changed" });
+  const client = room.clients.find(c => c.socketId === socket.id);
+  if (!client || !client.isHost) {
+      socket.emit('error', { message: "Only the host can change the language" });
       return;
-    }
+  }
 
-    if (!requestingClient.isHost && requestingClient.role !== 'admin') {
-      socket.emit('error', { message: "You don't have permission to change roles" });
-      return;
-    }
+  // Update language in the room
+  room.language = language;
+  io.to(roomId).emit(ACTIONS.LANGUAGE_CHANGE, { language });
 
-    if (!requestingClient.isHost && targetClient.role === 'admin') {
-      socket.emit('error', { message: "Only the host can change roles of admins" });
-      return;
-    }
-
-    targetClient.role = newRole;
-    io.to(roomId).emit(ACTIONS.ROLE_CHANGED, {
-      clients: room.clients,
-      changedUserId: targetSocketId,
-      username,
-      newRole
-  });
+  // Create and store the system message in chat history
   const timestamp = new Date().toLocaleTimeString();
   const systemMessage = {
-    username: "System",
-    message: `${username}'s role was changed to ${newRole}.`,
-    timestamp: new Date().toLocaleTimeString(),
-};
-console.log("🔹 Sending system message:", systemMessage);
-io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+      username: "System",
+      message: `${username} changed the language to ${language}.`,
+      timestamp,
+  };
 
-    if (chatUsers.has(roomId)) {
-      const roomChatUsers = chatUsers.get(roomId);
+  if (!chatHistories.has(roomId)) chatHistories.set(roomId, []);
+  chatHistories.get(roomId).push(systemMessage);
 
-      for (const [sid, user] of roomChatUsers.entries()) {
-        if (user.username === targetClient.username) {
-          user.role = newRole;
-          roomChatUsers.set(sid, user);
-        }
-      }
+  io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
+});
 
-      const activeUsers = Array.from(roomChatUsers.values()).map(user => ({
-        username: user.username,
-        role: user.role,
-        isHost: user.isHost
-      }));
+socket.on(ACTIONS.CHANGE_ROLE, ({ roomId, targetSocketId, newRole, username }) => {
+  const room = roomsMap.get(roomId);
+  if (!room) return;
 
-      io.to(roomId).emit("ACTIVE_USERS", activeUsers);
-    }
+  const targetClient = room.clients.find(c => c.socketId === targetSocketId);
+  const requestingClient = room.clients.find(c => c.socketId === socket.id);
 
-    io.to(roomId).emit(ACTIONS.ROLE_CHANGED, {
-      clients: room.clients,
-      changedUserId: targetSocketId,
-      username: targetClient.username
-    });
+  if (!targetClient || !requestingClient) return;
+
+  if (targetClient.isHost) {
+      socket.emit('error', { message: "Host's role cannot be changed" });
+      return;
+  }
+
+  if (!requestingClient.isHost && requestingClient.role !== 'admin') {
+      socket.emit('error', { message: "You don't have permission to change roles" });
+      return;
+  }
+
+  if (!requestingClient.isHost && targetClient.role === 'admin') {
+      socket.emit('error', { message: "Only the host can change roles of admins" });
+      return;
+  }
+
+  targetClient.role = newRole;
+  io.to(roomId).emit(ACTIONS.ROLE_CHANGED, { 
+      clients: room.clients, 
+      changedUserId: targetSocketId, 
+      changedBy: requestingClient.username, // Now tracking who changed the role
+      username: targetClient.username, 
+      newRole 
   });
+
+  // Save role change message in chat history
+  const timestamp = new Date().toLocaleTimeString();
+  const roleChangeMessage = {
+      username: "System",
+      message: `${requestingClient.username} changed ${targetClient.username}'s role to ${newRole}.`,
+      timestamp,
+  };
+
+  if (!chatHistories.has(roomId)) chatHistories.set(roomId, []);
+  chatHistories.get(roomId).push(roleChangeMessage);
+
+  io.to(roomId).emit("RECEIVE_MESSAGE", roleChangeMessage);
+});
+
 
   socket.on('disconnect', () => {
     for (const [roomId, room] of roomsMap.entries()) {
@@ -705,7 +728,7 @@ io.to(roomId).emit("RECEIVE_MESSAGE", systemMessage);
             
             const systemMessage = {
               username: "System",
-              message: `${client.username} joined the room.`,
+              message: `joined the room.`,
               timestamp: new Date().toLocaleTimeString(),
           };
           console.log("🔹 Sending system message:", systemMessage);
