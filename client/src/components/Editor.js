@@ -58,14 +58,16 @@ function Editor({ socketRef, roomId, onCodeChange, isAdmin, isHost, language, co
           autofocus: canEdit,
           dragDrop: false,
           keyMap: "default",
-          viewportMargin: Infinity,
+          viewportMargin: 10,
           copyWithEmptySelection: true
         }
       );
 
       // Set editor size after initialization
       if (editorRef.current) {
-        editorRef.current.setSize(null, "100%");
+        editorRef.current.setSize("100%", "100%");
+editorRef.current.getWrapperElement().style.overflow = "auto"; // ✅ Enables scrolling
+
         editorRef.current.setValue(code || '');
         editorRef.current.refresh();
 
@@ -181,19 +183,35 @@ editorRef.current.on("change", (instance, changes) => {
           font-size: 14px;
         }
 
-        .CodeMirror {
-          height: 100% !important;
-          width: 100% !important;
-          font-size: 16px;
-          line-height: 1.6;
-          padding-bottom: 20px;
+       .CodeMirror {
+  height: 100% !important;
+  overflow: hidden !important; /* ✅ Prevents extra scrollbar */
+  max-height: calc(100vh - 50px);
           padding-top: ${!(isAdmin || isHost) ? '40px' : '0'};
         }
-
+.CodeMirror-scroll {
+  overflow-y: auto !important; /* ✅ Only one scrollbar remains */
+  max-height: calc(100vh - 100px);
+}
         .CodeMirror-selected {
           background-color: rgba(255, 255, 255, 0.1) !important;
         }
+.CodeMirror::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
 
+.CodeMirror::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.CodeMirror::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+  .CodeMirror::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
         .CodeMirror-cursor {
           border-left: 2px solid #fff !important;
         }

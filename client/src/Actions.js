@@ -12,6 +12,7 @@ const ACTIONS = {
   SEND_MESSAGE: 'send-message',
   RECEIVE_MESSAGE: 'receive-message',
   LANGUAGE_CHANGE: 'language-change',
+   CLEAR_CHAT: "clearChat"
 };
 
 export default ACTIONS;

@@ -106,7 +106,7 @@ function EditorPage() {
               }
             } else if (isFirstUser) {
               // First user is both host and admin
-              setCurrentUserRole('admin');
+              setCurrentUserRole('host');
               setIsHost(true);
               toast.success('Welcome! You are the host of this room.');
             } else if (currentClient.role === 'admin') {
@@ -142,35 +142,47 @@ function EditorPage() {
       });
       socketRef.current.on(ACTIONS.UPDATE_USERS, ({ clients }) => {
         console.log("📢 Updating users list:", clients);
+    
         if (clients && Array.isArray(clients)) {
-          // Create a new array to ensure React detects the change
-          setClients(prevClients => {
-            console.log("Previous clients:", prevClients, "New clients:", clients);
-            return [...clients];
-          });
+            setClients([...clients]);
+    
+            // Check if the current user is now the host
+            const newHost = clients.find(client => client.isHost);
+            if (newHost?.username === location.state?.username) {
+                setIsHost(true);
+                setCurrentUserRole("host");
+                toast.success("You are now the host.");
+            }
         }
-      });
+    });
+    
 
     
-    socketRef.current.on("HOST_CHANGED", ({ previousHost, newHost,clients }) => {
-      console.log(`🎙 Host changed: ${previousHost} ➝ ${newHost}`);
-  
-      if (clients && Array.isArray(clients)) {
-        setClients([...clients]);
-      }
-      if (newHost === location.state?.username) {
-          toast.success('You are now the host of this room.');
-          setIsHost(true);
-          setCurrentUserRole('admin'); // Host should also be admin
-      }
-  
-      setMessages(prev => [...prev, {
-          username: 'System',
-          message: `${newHost} is now the host.`,
-          timestamp: new Date().toLocaleTimeString(),
-          isSystemMessage: true
-      }]);
-  });
+      socketRef.current.on("HOST_CHANGED", ({ previousHost, newHost }) => {
+        console.log(`🎙 Host changed: ${previousHost} ➝ ${newHost}`);
+    
+        setClients(prevClients => {
+            return prevClients.map(client => 
+                client.username === newHost ? { ...client, isHost: true } : { ...client, isHost: false }
+            );
+        });
+    
+        if (newHost === location.state?.username) {
+            setIsHost(true);
+            setCurrentUserRole("host"); // Make sure host role updates
+            toast.success("You are now the host of this room.");
+        } else {
+            setIsHost(false);
+        }
+    
+        setMessages(prev => [...prev, {
+            username: "System",
+            message: `${newHost} is now the host.`,
+            timestamp: new Date().toLocaleTimeString(),
+            isSystemMessage: true
+        }]);
+    });
+    
   
       
       // Listen for chat messages
@@ -188,12 +200,15 @@ function EditorPage() {
         return newMessages;
     });
 });
+
 socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
   console.log("📜 Received history log:", historyLog);
   setHistory(historyLog);
 });
 
-   
+socketRef.current.on("clearChat", () => {
+  setMessages([]);  // Reset chat history in the UI
+});
 
       // Listening for disconnected
       socketRef.current.on(ACTIONS.DISCONNECTED, ({ username, clients }) => {
@@ -305,6 +320,7 @@ socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
         socketRef.current?.off(ACTIONS.SYNC_CODE);
         socketRef.current?.off(ACTIONS.RECEIVE_MESSAGE);
         socketRef.current.off(ACTIONS.UPDATE_USERS);
+        socketRef.current.off("clearChat");
         socketRef.current.off("UPDATE_HISTORY")
         socketRef.current?.off('error');
       };
@@ -367,19 +383,21 @@ socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
   };
 
   const handleLanguageChange = (e) => {
-    // Only allow admins and hosts to change language
-    if (currentUserRole === 'admin' || isHost) {
-      const newLanguage = e.target.value;
-      setSelectedLanguage(newLanguage);
-      socketRef.current?.emit(ACTIONS.LANGUAGE_CHANGE, {
+    // ✅ Only the host can change language
+    if (!isHost) {  
+        toast.error("Only the host can change the language");
+        return;
+    }
+
+    const newLanguage = e.target.value;
+    setSelectedLanguage(newLanguage);
+    socketRef.current?.emit(ACTIONS.LANGUAGE_CHANGE, {
         roomId,
         language: newLanguage,
         username: location.state?.username
-      });
-    } else {
-      toast.error("Only admins and hosts can change the language");
-    }
-  };
+    });
+};
+
 
   const canEdit = (client) => {
     return client && (client.role === 'admin' || client.isHost);
@@ -588,7 +606,7 @@ socketRef.current.on("UPDATE_HISTORY", (historyLog) => {
             <select 
               value={selectedLanguage}
               onChange={handleLanguageChange}
-              disabled={!(currentUserRole === 'admin' || isHost)}
+              disabled={!isHost}  // ✅ Only host can change language
               className="form-select w-auto"
             >
               {LANGUAGES.map((lang) => (

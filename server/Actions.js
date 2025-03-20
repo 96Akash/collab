@@ -12,6 +12,7 @@ const ACTIONS = {
   SEND_MESSAGE: 'SEND_MESSAGE',
   RECEIVE_MESSAGE: 'RECEIVE_MESSAGE',
   LANGUAGE_CHANGE: 'language-change',
+   CLEAR_CHAT: "clearChat"
 };
 
 module.exports = ACTIONS;
